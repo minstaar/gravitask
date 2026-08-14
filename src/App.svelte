@@ -60,7 +60,7 @@
     };
   });
 
-  // 개발 편의를 위한 전역 단축키. 진짜 전역 단축키는 Tauri 껍데기에서 붙입니다.
+  // 브라우저 개발용. Tauri에서는 아래 전역 단축키가 같은 일을 합니다.
   $effect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.key === 'n' && (e.ctrlKey || e.metaKey)) {
@@ -70,6 +70,19 @@
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
+  });
+
+  // 전역 단축키(Ctrl+Alt+G)로 창이 떠오르면 입력칸에 커서를 둡니다.
+  // 창만 띄우고 커서가 없으면 결국 클릭하러 가야 해서 반쪽짜리입니다.
+  $effect(() => {
+    if (!inTauri) return;
+    let stop: (() => void) | undefined;
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen('gravitask://focus-input', () => quickAdd?.focus()).then((un) => {
+        stop = un;
+      })
+    );
+    return () => stop?.();
   });
 
   /**

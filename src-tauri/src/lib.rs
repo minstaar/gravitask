@@ -7,8 +7,14 @@ use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WebviewWindow, WindowEvent,
+    AppHandle, Emitter, Manager, WebviewWindow, WindowEvent,
 };
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+/// 어디서든 할 일을 적을 수 있게 하는 전역 단축키.
+/// 위젯을 클릭하러 가야 한다면 "나중에 적어야지"로 새는 항목이 생깁니다.
+const QUICK_ADD: &str = "Ctrl+Alt+G";
 
 struct WidgetState {
     /// 창이 포커스를 쥐고 있는지. 조작 중에는 아래로 내리지 않습니다.
@@ -89,8 +95,14 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show, &hide, &pin, &sep, &quit])?;
+    // 매일 쓰는 위젯이라 로그인할 때마다 직접 켜게 두면 금방 안 쓰게 됩니다.
+    let autostart = app.autolaunch();
+    let launch_on = autostart.is_enabled().unwrap_or(false);
+    let boot = CheckMenuItem::with_id(app, "boot", "로그인 시 자동 시작", true, launch_on, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &quit])?;
     let pin_ref = pin.clone();
+    let boot_ref = boot.clone();
 
     TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -120,6 +132,17 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                         let _ = window.set_focus();
                     }
                 }
+                "boot" => {
+                    let on = boot_ref.is_checked().unwrap_or(false);
+                    let launcher = app.autolaunch();
+                    let result = if on { launcher.enable() } else { launcher.disable() };
+                    if let Err(err) = result {
+                        // 실패하면 체크 상태를 되돌립니다. 켜졌다고 표시해놓고
+                        // 실제로는 안 켜지는 게 가장 나쁜 결과입니다.
+                        log::warn!("자동 시작 설정 실패: {err}");
+                        let _ = boot_ref.set_checked(!on);
+                    }
+                }
                 "quit" => app.exit(0),
                 _ => {}
             }
@@ -132,6 +155,35 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 창 위치를 기억합니다. 크기는 내용에 맞춰 우리가 직접 정하므로
+        // POSITION만 저장합니다. SIZE까지 맡기면 복원된 크기와 우리가 계산한
+        // 크기가 매번 다퉈 창이 들썩입니다.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
+                .build(),
+        )
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // 누르는 순간에만 반응합니다. 떼는 것까지 받으면 두 번 열립니다.
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        // 창을 띄우는 것만으로는 부족합니다. 입력칸에 커서까지
+                        // 가 있어야 바로 타이핑할 수 있습니다.
+                        let _ = window.emit("gravitask://focus-input", ());
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -159,6 +211,14 @@ pub fn run() {
             }
 
             spawn_desktop_parker(app.handle(), state);
+
+            if let Ok(shortcut) = QUICK_ADD.parse::<Shortcut>() {
+                if let Err(err) = app.global_shortcut().register(shortcut) {
+                    // 다른 앱이 이미 쓰고 있으면 등록에 실패합니다. 그래도
+                    // 위젯 자체는 멀쩡히 동작해야 하므로 경고만 남깁니다.
+                    log::warn!("전역 단축키 {QUICK_ADD} 등록 실패: {err}");
+                }
+            }
 
             Ok(())
         })
