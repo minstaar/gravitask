@@ -54,11 +54,36 @@ fn reapply_effects(window: &WebviewWindow) {
 fn spawn_desktop_keeper(app: &AppHandle, state: Arc<WidgetState>) {
     let handle = app.clone();
 
+    // 스타일을 되돌리는 쪽과 무한히 다투지 않도록 교정 횟수를 제한합니다.
+    let mut style_fixes = 0;
+
     std::thread::spawn(move || loop {
         std::thread::sleep(KEEPER_INTERVAL);
 
         if !state.keep_on_desktop.load(Ordering::Relaxed) {
             continue;
+        }
+
+        // Tauri가 창 설정을 마무리하면서 확장 스타일을 되돌립니다. setup()에서
+        // 한 번 걸어봐야 덮이므로, 되돌려졌으면 여기서 다시 겁니다.
+        if style_fixes < 5 {
+            if let Some(window) = handle.get_webview_window("main") {
+                if let Some(hwnd) = raw_handle(&window) {
+                    if !desktop::is_tool_window(hwnd) {
+                        style_fixes += 1;
+                        let inner = handle.clone();
+                        let _ = handle.run_on_main_thread(move || {
+                            if let Some(window) = inner.get_webview_window("main") {
+                                if let Some(hwnd) = raw_handle(&window) {
+                                    desktop::make_tool_window(hwnd);
+                                }
+                                let _ = window.set_always_on_bottom(true);
+                                reapply_effects(&window);
+                            }
+                        });
+                    }
+                }
+            }
         }
         // 사용자가 직접 숨긴 창을 되살리면 트레이 메뉴가 고장난 것처럼 보입니다.
         if state.user_hidden.load(Ordering::Relaxed) {
@@ -171,6 +196,22 @@ pub fn run() {
             });
 
             build_tray(app, state.clone())?;
+
+            // Win+D를 견디는 진짜 수단. 감시자는 이게 통하지 않는 상황을 위한
+            // 보험일 뿐이고, 창을 도구 창으로 바꾸는 것이 정공법입니다.
+            #[cfg(windows)]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(hwnd) = raw_handle(&window) {
+                    if desktop::make_tool_window(hwnd) {
+                        log::info!("도구 창으로 전환 완료");
+                    } else {
+                        log::warn!("도구 창 전환 실패 — Win+D에 숨겨질 수 있습니다");
+                    }
+                }
+                let _ = window.set_always_on_bottom(true);
+                reapply_effects(&window);
+            }
+
             spawn_desktop_keeper(app.handle(), state);
 
             Ok(())
