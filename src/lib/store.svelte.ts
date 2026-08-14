@@ -53,7 +53,7 @@ export function saveCategories(next: Category[]): void {
   localStorage.setItem(CAT_KEY, JSON.stringify(next));
 }
 
-export function addCategory(name = '새 범주'): string {
+export function addCategory(name = '새 주제'): string {
   const id = 'cat-' + Math.random().toString(36).slice(2, 8);
   const order = store.categories.reduce((m, c) => Math.max(m, c.order), -1) + 1;
   saveCategories([...store.categories, { id, name, order }]);
@@ -75,7 +75,7 @@ export function moveCategory(id: string, delta: number): void {
 }
 
 /**
- * 비어 있을 때만 지웁니다. 할 일이 남은 범주를 지우면 그 데이터를 잃는데,
+ * 비어 있을 때만 지웁니다. 할 일이 남은 주제를 지우면 그 데이터를 잃는데,
  * 되돌릴 방법이 없습니다. 삭제를 막는 편이 안전하고 설명도 필요 없습니다.
  */
 export function removeCategory(id: string): boolean {

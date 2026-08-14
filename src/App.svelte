@@ -158,10 +158,10 @@
         class="edit-toggle"
         class:on={editing}
         aria-pressed={editing}
-        title={editing ? '편집 끝내기' : '범주 편집'}
+        title={editing ? '편집 끝내기' : '주제 편집'}
         onclick={() => (editing = !editing)}
       >
-        {editing ? '완료' : '범주 편집'}
+        {editing ? '완료' : '주제 편집'}
       </button>
     </div>
 
@@ -273,7 +273,7 @@
   }
 
 
-  /* 눈에 띄어야 합니다. 범주가 하드코딩처럼 보이면 사용자는 자기 용도로
+  /* 눈에 띄어야 합니다. 주제가 하드코딩처럼 보이면 사용자는 자기 용도로
      바꿀 수 있다는 걸 아예 모르고 지나갑니다. */
   .edit-toggle {
     margin-left: auto;

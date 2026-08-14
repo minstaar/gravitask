@@ -197,9 +197,16 @@ function cut(input: string, hit: Hit<unknown> | null): string {
   return input.slice(0, hit.start) + ' ' + input.slice(hit.end);
 }
 
+/**
+ * 시각을 떼고 남은 조사만 정리합니다.
+ *
+ * '마감'은 떼지 않습니다. "6시까지"의 '까지'는 시각에 붙은 조사라 남으면
+ * 어색하지만, '마감'은 "논문 마감", "과제 마감"처럼 제목의 일부인 경우가
+ * 훨씬 흔합니다. 접미사로 취급하면 사용자가 쓴 제목을 말없이 잘라냅니다.
+ */
 function cleanTitle(s: string): string {
   return s
-    .replace(/\s*(까지|마감|까지야|까지임)\s*$/g, '')
+    .replace(/\s*(까지|까지야|까지임)\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

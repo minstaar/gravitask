@@ -1,4 +1,4 @@
-import raw from './theme.json';
+﻿import raw from './theme.json';
 
 export interface RampStep {
   id: string;
@@ -28,11 +28,11 @@ export interface Theme {
     minCardGap: number;
     floor: number;
     maxQueueVisible: number;
-    /** 레인 하나의 선호 폭. 범주가 적을 때 쓰는 값입니다 */
+    /** 레인 하나의 선호 폭. 주제가 적을 때 쓰는 값입니다 */
     laneWidth: number;
     /** 레인이 좁아질 수 있는 하한. 이보다 좁으면 제목이 거의 안 남습니다 */
     laneMin: number;
-    /** 위젯 내용 폭의 상한. 범주가 늘어도 화면을 잠식하지 않게 막습니다 */
+    /** 위젯 내용 폭의 상한. 주제가 늘어도 화면을 잠식하지 않게 막습니다 */
     maxWidth: number;
     laneGap: number;
     /** 시간 눈금이 들어가는 왼쪽 여백 */

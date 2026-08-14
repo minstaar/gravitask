@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { theme } from '../theme';
   import type { Category, Task } from '../types';
 
@@ -38,7 +38,7 @@
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-name="{theme.type.category}px"
 >
-  <h2>범주</h2>
+  <h2>주제</h2>
 
   <ul>
     {#each categories as category, i (category.id)}
@@ -47,7 +47,7 @@
         <input
           class="rename"
           value={category.name}
-          aria-label="범주 이름"
+          aria-label="주제 이름"
           oninput={(e) => onRename(category.id, e.currentTarget.value)}
         />
 
@@ -69,8 +69,8 @@
           title={open > 0
             ? `할 일 ${open}건이 남아 있어 지울 수 없습니다`
             : categories.length <= 1
-              ? '마지막 범주는 지울 수 없습니다'
-              : '범주 삭제'}
+              ? '마지막 주제는 지울 수 없습니다'
+              : '주제 삭제'}
           aria-label="{category.name} 삭제"
           onclick={() => onRemove(category.id)}>삭제</button
         >
@@ -78,7 +78,7 @@
     {/each}
   </ul>
 
-  <button class="add" onclick={onAdd}>＋ 범주 추가</button>
+  <button class="add" onclick={onAdd}>＋ 주제 추가</button>
 </section>
 
 <style>
