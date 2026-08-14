@@ -27,7 +27,13 @@ src-tauri/gen
 
 # Editor directories and files
 .vscode/*
+# 권장 확장 목록은 공유합니다. 개인 설정과 달리 기여자에게 쓸모가 있습니다.
 !.vscode/extensions.json
+
+# AI 도구 설정. 개발자마다 다르고 저장소에 있을 이유가 없습니다.
+.claude/
+.cursor/
+.aider*
 .idea
 .DS_Store
 *.suo
