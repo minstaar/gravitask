@@ -88,7 +88,18 @@
   const accent = $derived(`hsl(${category.hue} 55% 62%)`);
 </script>
 
-<section class="widget" style:--accent={accent}>
+<section
+  class="widget"
+  style:--accent={accent}
+  style:--surface={theme.surface.background}
+  style:--surface-border={theme.surface.border}
+  style:--blur="{theme.surface.blur}px"
+  style:--text={theme.surface.text}
+  style:--text-muted={theme.surface.textMuted}
+  style:--axis={theme.surface.axis}
+  style:--boundary={theme.surface.boundary}
+  style:--deadline={theme.surface.deadline}
+>
   <header>
     <span class="name">{category.name}</span>
     <span class="count">{placed.visible.length + placed.hiddenQueue} items</span>
@@ -135,15 +146,21 @@
 </section>
 
 <style>
+  /**
+   * 표면은 어두운 스크림입니다. 투명 창에서는 backdrop-filter가 흐릴 대상이
+   * 없으므로(창 뒤 바탕화면은 페이지 밖입니다) 블러에 가독성을 기대면 안 됩니다.
+   * 실제 흐림은 OS의 acrylic이 처리하고, 글자 대비는 이 스크림이 책임집니다.
+   * 흰 배경화면 위 최악의 경우에도 본문 6.6:1, 보조 텍스트 4.6:1이 나옵니다.
+   */
   .widget {
     border-radius: 14px;
     padding: 14px 14px 12px;
-    background: rgba(255, 255, 255, 0.055);
-    border: 1px solid rgba(255, 255, 255, 0.11);
-    backdrop-filter: blur(22px) saturate(1.3);
-    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
+    backdrop-filter: blur(var(--blur)) saturate(1.3);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
-    color: #ededf5;
+    color: var(--text);
     width: 268px;
     flex: none;
   }
@@ -166,7 +183,7 @@
   .count {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
 
@@ -189,7 +206,7 @@
     top: 0;
     bottom: 0;
     width: 1px;
-    background: linear-gradient(to top, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.05));
+    background: linear-gradient(to top, var(--axis), transparent);
   }
 
   .tick {
@@ -199,7 +216,7 @@
     text-align: right;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.34);
+    color: var(--axis);
     transform: translateY(50%);
   }
 
@@ -207,7 +224,7 @@
     position: absolute;
     left: 44px;
     right: 0;
-    border-top: 1px dashed rgba(255, 255, 255, 0.26);
+    border-top: 1px dashed var(--boundary);
   }
 
   .boundary span {
@@ -216,7 +233,7 @@
     top: -15px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.42);
+    color: var(--text-muted);
     letter-spacing: 0.1em;
   }
 
@@ -226,7 +243,8 @@
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 8.5px;
     letter-spacing: 0.16em;
-    color: rgba(255, 255, 255, 0.24);
+    color: var(--text-muted);
+    opacity: 0.45;
   }
 
   .more {
@@ -235,7 +253,7 @@
     top: -2px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--text-muted);
   }
 
   .deadline {
@@ -244,7 +262,7 @@
     right: 0;
     bottom: 0;
     height: 1px;
-    background: linear-gradient(90deg, rgba(196, 43, 74, 0.95), rgba(196, 43, 74, 0.2));
+    background: linear-gradient(90deg, var(--deadline), transparent);
   }
 
   .deadline span {
@@ -253,7 +271,7 @@
     bottom: 3px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 9px;
-    color: rgba(232, 124, 146, 0.9);
+    color: var(--deadline);
     letter-spacing: 0.08em;
   }
 
@@ -263,6 +281,7 @@
     bottom: 50%;
     margin: 0;
     font-size: 11.5px;
-    color: rgba(255, 255, 255, 0.28);
+    color: var(--text-muted);
+    opacity: 0.6;
   }
 </style>

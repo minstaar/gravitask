@@ -51,13 +51,13 @@
   },
 
   "surface": {
-    "background": "rgba(255,255,255,0.055)",
-    "border": "rgba(255,255,255,0.11)",
+    "background": "rgba(18,19,27,0.72)",
+    "border": "rgba(255,255,255,0.14)",
     "blur": 22,
-    "text": "#EDEDF5",
-    "textMuted": "rgba(255,255,255,0.45)",
-    "axis": "rgba(255,255,255,0.30)",
-    "boundary": "rgba(255,255,255,0.26)",
-    "deadline": "#C42B4A"
+    "text": "#F2F2F8",
+    "textMuted": "rgba(255,255,255,0.70)",
+    "axis": "rgba(255,255,255,0.42)",
+    "boundary": "rgba(255,255,255,0.30)",
+    "deadline": "#E0566F"
   }
 }

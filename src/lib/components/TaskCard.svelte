@@ -146,10 +146,12 @@
     text-overflow: ellipsis;
   }
 
+  /* opacity로 흐리게 하면 스크림 위에서 대비가 4.5:1 아래로 떨어집니다.
+     토큰 색을 직접 쓰고, 크기도 9.5px에서 10px로 올립니다. */
   .due {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 9.5px;
-    opacity: 0.72;
+    font-size: 10px;
+    color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     margin-top: 1px;
   }
