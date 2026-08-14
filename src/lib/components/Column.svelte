@@ -1,15 +1,6 @@
 <script lang="ts">
-  import { theme, boundaryY } from '../theme';
-  import {
-    formatRemaining,
-    hoursUntil,
-    overdueY,
-    queueY,
-    runwayY,
-    visualFor,
-    withAlpha,
-    type Visual,
-  } from '../urgency';
+  import { theme } from '../theme';
+  import { computeLayout } from '../layout';
   import type { Category, Task } from '../types';
   import TaskCard from './TaskCard.svelte';
 
@@ -17,6 +8,7 @@
     category,
     tasks,
     now,
+    active = false,
     reducedMotion = false,
     onToggle,
     onRemove,
@@ -24,108 +16,63 @@
     category: Category;
     tasks: Task[];
     now: number;
+    /** 조작 중인지. 배경이 비치면 글자를 읽기 어려우므로 불투명하게 바꿉니다 */
+    active?: boolean;
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
     onRemove: (id: string) => void;
   } = $props();
 
-  const BOUND = boundaryY();
-
-  interface Placed {
-    task: Task;
-    visual: Visual;
-    y: number;
-    remaining: string;
-  }
-
-  /**
-   * 2구역 배치.
-   * 위(대기)는 균등 간격 — 순서와 개수만 전달합니다.
-   * 아래(활주로)는 실제 시간 눈금 — 마감선을 향해 연속적으로 하강합니다.
-   */
-  const placed = $derived.by((): { visible: Placed[]; hiddenQueue: number } => {
-    const live = tasks
-      .filter((t) => t.completedAt === null)
-      .sort((a, b) => a.due - b.due);
-
-    const nowDate = new Date(now);
-    const out: Placed[] = [];
-    let qi = 0;
-    let oi = 0;
-    let hiddenQueue = 0;
-
-    for (const task of live) {
-      const h = hoursUntil(task.due, now);
-      const visual = visualFor(h, nowDate, { reducedMotion });
-      let y: number;
-
-      if (visual.zone === 'overdue') {
-        y = overdueY(oi++);
-      } else if (visual.zone === 'runway') {
-        y = runwayY(h);
-      } else {
-        if (qi >= theme.layout.maxQueueVisible) {
-          hiddenQueue++;
-          continue;
-        }
-        y = queueY(qi++);
-      }
-
-      out.push({ task, visual, y, remaining: formatRemaining(task.due, now, visual.zone) });
-    }
-
-    return { visible: out, hiddenQueue };
-  });
-
-  // 활주로 눈금. runwayHours가 바뀌면 라벨도 따라갑니다.
-  const ticks = $derived(
-    [0.25, 0.5, 0.75].map((f) => {
-      const h = theme.layout.runwayHours * f;
-      return { label: `${Math.round(h)}h`, y: runwayY(h) + theme.layout.cardHeight / 2 };
-    })
-  );
-
+  const layout = $derived(computeLayout(tasks, now, { reducedMotion }));
   const accent = $derived(`hsl(${category.hue} 55% 62%)`);
+  const surface = $derived(active ? theme.surface.backgroundActive : theme.surface.background);
 </script>
 
 <section
   class="widget"
   style:--accent={accent}
-  style:--surface={theme.surface.background}
+  style:--surface={surface}
   style:--surface-border={theme.surface.border}
-  style:--blur="{theme.surface.blur}px"
   style:--text={theme.surface.text}
   style:--text-muted={theme.surface.textMuted}
   style:--axis={theme.surface.axis}
   style:--boundary={theme.surface.boundary}
   style:--deadline={theme.surface.deadline}
+  style:width="{theme.layout.columnWidth}px"
 >
   <header>
     <span class="name">{category.name}</span>
-    <span class="count">{placed.visible.length + placed.hiddenQueue} items</span>
+    <span class="count">{layout.placed.length + layout.hiddenQueue} items</span>
   </header>
 
-  <div class="column" style:height="{theme.layout.columnHeight}px">
+  <div class="column" style:height="{layout.height}px">
     <!-- 활주로 바닥 틴트. 비어 있어도 남겨둡니다 — 빈 활주로는 "오늘은 급한 게 없다"는 정보입니다 -->
-    <div class="runway" style:height="{BOUND}px"></div>
+    <div
+      class="runway"
+      style:bottom="{layout.deadlineY}px"
+      style:height="{theme.layout.runwayHeight}px"
+    ></div>
     <div class="axis"></div>
 
-    {#each ticks as tick (tick.label)}
+    {#each layout.ticks as tick (tick.label)}
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
-    <div class="boundary" style:bottom="{BOUND}px">
+    <div class="boundary" style:bottom="{layout.boundaryY}px">
       <span>{theme.layout.runwayHours}H</span>
     </div>
 
-    {#if placed.hiddenQueue > 0}
-      <span class="more">외 {placed.hiddenQueue}건</span>
+    {#if layout.hiddenQueue > 0}
+      <span class="more">외 {layout.hiddenQueue}건</span>
     {/if}
 
-    <span class="zonetag" style:bottom="{theme.layout.columnHeight - 11}px">대기</span>
-    <span class="zonetag" style:bottom="{BOUND - 14}px">임박</span>
+    <span class="zonetag" style:bottom="{layout.height - 11}px">대기</span>
+    <span class="zonetag" style:bottom="{layout.boundaryY - 13}px">임박</span>
+    {#if layout.deadlineY > 0}
+      <span class="zonetag" style:bottom="{layout.deadlineY - 13}px">지남</span>
+    {/if}
 
-    {#each placed.visible as p (p.task.id)}
+    {#each layout.placed as p (p.task.id)}
       <TaskCard
         task={p.task}
         visual={p.visual}
@@ -137,9 +84,10 @@
       />
     {/each}
 
-    <div class="deadline"><span>DUE</span></div>
+    <!-- 마감선. 지난 항목이 있으면 그 위로 올라갑니다 -->
+    <div class="deadline" style:bottom="{layout.deadlineY}px"><span>DUE</span></div>
 
-    {#if placed.visible.length === 0}
+    {#if layout.placed.length === 0}
       <p class="empty">비어 있음</p>
     {/if}
   </div>
@@ -149,7 +97,6 @@
   /**
    * 표면은 어두운 스크림입니다. 투명 창에서는 backdrop-filter가 흐릴 대상이
    * 없으므로(창 뒤 바탕화면은 페이지 밖입니다) 블러에 가독성을 기대면 안 됩니다.
-   * 실제 흐림은 OS의 acrylic이 처리하고, 글자 대비는 이 스크림이 책임집니다.
    * 흰 배경화면 위 최악의 경우에도 본문 6.6:1, 보조 텍스트 4.6:1이 나옵니다.
    */
   .widget {
@@ -157,12 +104,10 @@
     padding: 14px 14px 12px;
     background: var(--surface);
     border: 1px solid var(--surface-border);
-    backdrop-filter: blur(var(--blur)) saturate(1.3);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
     color: var(--text);
-    width: 268px;
     flex: none;
+    transition: background 0.18s ease;
   }
 
   header {
@@ -189,15 +134,14 @@
 
   .column {
     position: relative;
+    transition: height 0.25s ease;
   }
 
   .runway {
     position: absolute;
     left: 44px;
     right: 0;
-    bottom: 0;
     background: linear-gradient(to top, rgba(196, 43, 74, 0.1), rgba(196, 43, 74, 0.015));
-    border-radius: 0 0 6px 6px;
   }
 
   .axis {
@@ -260,7 +204,6 @@
     position: absolute;
     left: 44px;
     right: 0;
-    bottom: 0;
     height: 1px;
     background: linear-gradient(90deg, var(--deadline), transparent);
   }

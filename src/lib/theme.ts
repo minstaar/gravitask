@@ -14,13 +14,16 @@ export interface Theme {
   layout: {
     /** 활주로 구역의 경계. 이 시간 이내면 시간 눈금 위에 놓입니다 */
     runwayHours: number;
-    columnHeight: number;
+    /** 활주로 구역의 높이. 오늘 마감이 여러 건 몰리는 일은 드물어서
+     *  기둥의 큰 비중을 줄 이유가 없습니다 */
+    runwayHeight: number;
     cardHeight: number;
     queueGap: number;
-    /** 컬럼 높이 중 활주로가 차지하는 비율 */
-    runwayRatio: number;
+    overdueGap: number;
+    minQueueHeight: number;
     floor: number;
     maxQueueVisible: number;
+    columnWidth: number;
   };
   urgency: {
     horizonHours: number;
@@ -53,6 +56,8 @@ export interface Theme {
   };
   surface: {
     background: string;
+    /** 조작 중일 때. 배경이 비치면 글자를 읽기 어려우므로 불투명에 가깝게 */
+    backgroundActive: string;
     border: string;
     blur: number;
     text: string;
@@ -64,13 +69,3 @@ export interface Theme {
 }
 
 export const theme: Theme = raw as Theme;
-
-/** 활주로 경계선의 바닥 기준 높이(px) */
-export function boundaryY(t: Theme = theme): number {
-  return Math.round(t.layout.columnHeight * t.layout.runwayRatio);
-}
-
-/** 활주로 안에서 카드가 움직일 수 있는 세로 범위(px) */
-export function runwayTravel(t: Theme = theme): number {
-  return boundaryY(t) - t.layout.floor - t.layout.cardHeight - 8;
-}

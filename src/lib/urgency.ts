@@ -6,7 +6,7 @@
  * 빨강" 같은 판단을 하기 시작하면 일관성이 무너집니다.
  */
 
-import { theme, boundaryY, runwayTravel, type RampStep, type Theme } from './theme';
+import { theme, type RampStep, type Theme } from './theme';
 
 export const MS_HOUR = 3_600_000;
 
@@ -89,26 +89,6 @@ export function visualFor(
     lift: lerp(0, c.liftUrgent, u),
     breathe: motionOk && zone !== 'queue',
   };
-}
-
-/* ---------- 배치 ---------- */
-
-/**
- * 활주로: 실제 시간 눈금. 0시간 = 바닥(마감선), runwayHours = 경계선.
- * 대기 구역: 균등 간격. 순서와 개수만 전달하므로 남은 시간과 무관합니다.
- */
-export function runwayY(hoursLeft: number, t: Theme = theme): number {
-  const frac = Math.max(0, Math.min(1, hoursLeft / t.layout.runwayHours));
-  return t.layout.floor + frac * runwayTravel(t);
-}
-
-export function queueY(index: number, t: Theme = theme): number {
-  return boundaryY(t) + 14 + index * t.layout.queueGap;
-}
-
-/** 지난 항목들은 바닥에 겹치므로 살짝 부채꼴로 펼칩니다 */
-export function overdueY(index: number, t: Theme = theme): number {
-  return t.layout.floor + index * 4;
 }
 
 /* ---------- 표기법 ---------- */
