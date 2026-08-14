@@ -5,9 +5,7 @@
   import {
     addCategory,
     addTask,
-    CATEGORY_HUES,
     moveCategory,
-    recolorCategory,
     refresh,
     removeCategory,
     renameCategory,
@@ -166,10 +164,8 @@
       <CategoryEditor
         categories={sorted}
         tasks={store.tasks}
-        hues={CATEGORY_HUES}
         onAdd={() => addCategory()}
         onRename={renameCategory}
-        onRecolor={recolorCategory}
         onMove={moveCategory}
         onRemove={removeCategory}
       />

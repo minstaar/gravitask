@@ -21,11 +21,16 @@ export interface Task {
 
 export type NewTask = Omit<Task, 'id' | 'createdAt' | 'completedAt'>;
 
+/**
+ * 범주에는 색이 없습니다.
+ *
+ * 한때 범주마다 hue를 배정했지만, 카드가 이미 긴급도 색(청록→황량→적색)을
+ * 쓰고 있어서 화면에 색 체계가 둘이 되고 서로 부조화했습니다. 범주는 레인
+ * 위치와 이름으로 충분히 구분되므로, 색은 긴급도에만 맡깁니다.
+ */
 export interface Category {
   id: string;
   name: string;
-  /** 축의 정체성 색상 (0–360). 긴급도는 채도·명도로 표현하므로 hue는 범주 전용 */
-  hue: number;
   order: number;
 }
 

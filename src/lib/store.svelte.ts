@@ -1,11 +1,11 @@
-import { LocalSource } from './sources/LocalSource';
+﻿import { LocalSource } from './sources/LocalSource';
 import type { Category, NewTask, Task, TaskSource } from './types';
 
 const CAT_KEY = 'reminder-widget:categories:v1';
 
 const SEED: Category[] = [
-  { id: 'study', name: '학업', hue: 258, order: 0 },
-  { id: 'life', name: '생활', hue: 168, order: 1 },
+  { id: 'study', name: '학업', order: 0 },
+  { id: 'life', name: '생활', order: 1 },
 ];
 
 function loadCategories(): Category[] {
@@ -53,33 +53,15 @@ export function saveCategories(next: Category[]): void {
   localStorage.setItem(CAT_KEY, JSON.stringify(next));
 }
 
-/**
- * 범주 색 프리셋.
- *
- * 자유로운 색상환을 열어주지 않는 이유: 범주 hue가 긴급도 색(적·주황·황색)과
- * 겹치면 "급한 건지 범주 색인지" 구분이 안 됩니다. 그 대역을 비워둔 프리셋만
- * 제공하면 충돌이 구조적으로 막힙니다.
- */
-export const CATEGORY_HUES = [140, 168, 190, 210, 235, 258, 285, 310];
-
-function nextHue(used: Category[]): number {
-  const taken = new Set(used.map((c) => c.hue));
-  return CATEGORY_HUES.find((h) => !taken.has(h)) ?? CATEGORY_HUES[used.length % CATEGORY_HUES.length];
-}
-
 export function addCategory(name = '새 범주'): string {
   const id = 'cat-' + Math.random().toString(36).slice(2, 8);
   const order = store.categories.reduce((m, c) => Math.max(m, c.order), -1) + 1;
-  saveCategories([...store.categories, { id, name, hue: nextHue(store.categories), order }]);
+  saveCategories([...store.categories, { id, name, order }]);
   return id;
 }
 
 export function renameCategory(id: string, name: string): void {
   saveCategories(store.categories.map((c) => (c.id === id ? { ...c, name } : c)));
-}
-
-export function recolorCategory(id: string, hue: number): void {
-  saveCategories(store.categories.map((c) => (c.id === id ? { ...c, hue } : c)));
 }
 
 /** delta는 -1(왼쪽) 또는 +1(오른쪽). 이웃과 순서를 맞바꿉니다. */

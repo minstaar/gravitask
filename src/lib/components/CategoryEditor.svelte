@@ -5,19 +5,15 @@
   let {
     categories,
     tasks,
-    hues,
     onAdd,
     onRename,
-    onRecolor,
     onMove,
     onRemove,
   }: {
     categories: Category[];
     tasks: Task[];
-    hues: number[];
     onAdd: () => void;
     onRename: (id: string, name: string) => void;
-    onRecolor: (id: string, hue: number) => void;
     onMove: (id: string, delta: number) => void;
     onRemove: (id: string) => void;
   } = $props();
@@ -48,23 +44,10 @@
     {#each categories as category, i (category.id)}
       {@const open = openCount.get(category.id) ?? 0}
       <li>
-        <div class="swatches">
-          {#each hues as hue (hue)}
-            <button
-              class="swatch"
-              class:on={hue === category.hue}
-              style:background="hsl({hue} 58% 62%)"
-              aria-label="{category.name} 색 {hue}"
-              onclick={() => onRecolor(category.id, hue)}
-            ></button>
-          {/each}
-        </div>
-
         <input
           class="rename"
           value={category.name}
           aria-label="범주 이름"
-          style:color="hsl({category.hue} 50% 70%)"
           oninput={(e) => onRename(category.id, e.currentTarget.value)}
         />
 
@@ -134,31 +117,13 @@
     gap: 7px;
   }
 
-  .swatches {
-    display: flex;
-    gap: 3px;
-    flex: none;
-  }
-
-  .swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 1.5px solid transparent;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .swatch.on {
-    border-color: var(--text);
-  }
-
   .rename {
     flex: 1;
     min-width: 0;
     font: inherit;
     font-size: var(--fs-name);
     font-weight: 650;
+    color: var(--text);
     background: rgba(255, 255, 255, 0.07);
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 7px;

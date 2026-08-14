@@ -48,11 +48,11 @@
   style:--gutter="{L.gutter}px"
   style:--lane-w="{L.laneWidth}px"
   style:--lane-gap="{L.laneGap}px"
-  style:width="{width}px"
+  style:--content-w="{width}px"
 >
   <header style:padding-left="{L.gutter}px">
     {#each axis.lanes as lane (lane.category.id)}
-      <span class="lane-name" style:color="hsl({lane.category.hue} 55% 66%)">
+      <span class="lane-name">
         {lane.category.name}
         {#if lane.hiddenQueue > 0}<em>외 {lane.hiddenQueue}</em>{/if}
       </span>
@@ -101,6 +101,8 @@
    * 없으므로(창 뒤 바탕화면은 페이지 밖입니다) 블러에 가독성을 기대면 안 됩니다.
    * 흰 배경화면 위 최악의 경우에도 본문 6.6:1, 보조 텍스트 4.6:1이 나옵니다.
    */
+  /* 폭은 내용(header·column)에만 주고 바깥은 감쌉니다. .widget에 직접 주면
+     border-box라 패딩과 테두리가 그 안에 포함돼 레인이 삐져나갑니다. */
   .widget {
     border-radius: 14px;
     padding: 12px 14px 12px;
@@ -109,20 +111,25 @@
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
     color: var(--text);
     flex: none;
+    width: max-content;
   }
 
   header {
     display: flex;
     gap: var(--lane-gap);
     margin-bottom: 10px;
+    width: var(--content-w);
   }
 
+  /* 범주에는 색을 쓰지 않습니다. 카드가 이미 긴급도 색을 쓰고 있어서
+     색 체계가 둘이 되면 서로 부조화하고 신호가 흐려집니다. */
   .lane-name {
     width: var(--lane-w);
     flex: none;
     font-size: var(--fs-meta);
     font-weight: 650;
     letter-spacing: 0.02em;
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -138,6 +145,7 @@
 
   .column {
     position: relative;
+    width: var(--content-w);
     transition: height 0.25s ease;
   }
 
