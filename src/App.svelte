@@ -273,23 +273,25 @@
   }
 
 
+  /* 눈에 띄어야 합니다. 범주가 하드코딩처럼 보이면 사용자는 자기 용도로
+     바꿀 수 있다는 걸 아예 모르고 지나갑니다. */
   .edit-toggle {
     margin-left: auto;
     font: inherit;
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.45);
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 6px;
-    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 5px 12px;
     cursor: pointer;
   }
 
   .edit-toggle:hover {
-    color: rgba(255, 255, 255, 0.9);
-    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.45);
   }
 
   .edit-toggle.on {
@@ -302,7 +304,7 @@
   .dragbar {
     display: flex;
     align-items: center;
-    height: 18px;
+    height: 28px;
     cursor: grab;
     /* 끌기 영역이 넓어야 잡기 쉽습니다. 위젯은 자주 옮기게 되니까요 */
     margin: -4px -4px -6px;
