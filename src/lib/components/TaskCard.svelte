@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Spring } from 'svelte/motion';
+  import { cubicIn } from 'svelte/easing';
   import { theme } from '../theme';
   import { stripePattern, withAlpha, type Visual } from '../urgency';
   import type { Task } from '../types';
@@ -51,12 +52,42 @@
   const background = $derived(
     overdue ? stripePattern(visual.color) : withAlpha(visual.color, visual.fillAlpha)
   );
+
+  // 저장소 왕복을 기다리지 않고 체크 표시를 먼저 채웁니다.
+  // 클릭이 즉시 반응해야 완료가 보상처럼 느껴집니다.
+  let justDone = $state(false);
+
+  function complete() {
+    justDone = true;
+    onToggle(task);
+  }
+
+  /**
+   * 완료하면 카드가 마감선 아래로 빠집니다.
+   * 위에 남은 카드들이 한 칸 내려앉는 건 별도 처리가 필요 없습니다 —
+   * 대기 구역 인덱스가 하나씩 당겨지면서 각자의 스프링이 알아서 따라옵니다.
+   * 이 0.4초가 재방문율을 만듭니다.
+   */
+  function fall(_node: Element, { duration }: { duration: number }) {
+    return {
+      duration,
+      easing: cubicIn,
+      css: (t: number, u: number) =>
+        `opacity: ${t};
+         transform: translateY(${u * 30}px) scale(${0.94 + t * 0.06});
+         filter: saturate(${0.25 + t * 0.75});`,
+    };
+  }
 </script>
 
+<!-- data-target은 테스트 훅입니다. 실제 bottom은 스프링이 쫓아가는 중이라
+     목표 위치를 따로 노출해야 배치 로직을 검증할 수 있습니다. -->
 <div
   class="card"
   class:breathe={visual.breathe && visual.zone !== 'queue'}
   data-zone={visual.zone}
+  data-target={targetY}
+  out:fall={{ duration: reducedMotion ? 0 : theme.motion.completeMs }}
   style:bottom="{y.current}px"
   style:height="{theme.layout.cardHeight}px"
   style:background
@@ -70,7 +101,8 @@
   <button
     class="check"
     style:border-color={withAlpha(visual.color, 0.7)}
-    onclick={() => onToggle(task)}
+    style:background={justDone ? visual.color : null}
+    onclick={complete}
     aria-label="{task.title} 완료"
   ></button>
 
