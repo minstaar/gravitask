@@ -23,3 +23,4 @@ log = "0.4"
 # 트레이가 유일한 되찾기 수단입니다. image-png는 트레이 아이콘 디코딩용.
 tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

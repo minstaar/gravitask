@@ -24,15 +24,7 @@
         "decorations": false,
         "shadow": false,
 
-        "alwaysOnBottom": true,
-        "skipTaskbar": true,
-
-        "windowEffects": {
-          "effects": ["acrylic"],
-          "state": "active",
-          "radius": 16,
-          "color": [18, 19, 27, 190]
-        }
+        "skipTaskbar": true
       }
     ],
     "security": {
