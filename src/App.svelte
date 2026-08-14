@@ -153,7 +153,11 @@
 
   <div class="panel" bind:this={panel}>
     <div class="dragbar" data-tauri-drag-region={inTauri ? true : undefined}>
-      <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>Gravitask</span>
+      <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>
+        <span style:color={theme.surface.brandWarm}>GRAVI</span><span
+          style:color={theme.surface.brandCool}>TASK</span
+        >
+      </span>
       <button
         class="edit-toggle"
         class:on={editing}
@@ -317,10 +321,9 @@
 
   .brand {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.28);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
     user-select: none;
   }
 

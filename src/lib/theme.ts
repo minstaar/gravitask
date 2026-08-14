@@ -79,6 +79,9 @@ export interface Theme {
   };
   surface: {
     background: string;
+    /** 로고 GRAVI / TASK 두 색. 아이콘과 같은 짝을 씁니다 */
+    brandWarm: string;
+    brandCool: string;
     /** 조작 중 위젯 뒤에 까는 판. 배경화면이 비치면 글자를 읽기 어렵습니다 */
     backdrop: string;
     /** 판의 위쪽 가장자리 색. 미묘한 기울기가 순색 판보다 덜 투박합니다 */

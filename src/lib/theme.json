@@ -69,6 +69,8 @@
 
   "surface": {
     "background": "rgba(18,19,27,0.72)",
+    "brandWarm": "#E8913C",
+    "brandCool": "#4FA3E3",
     "backdrop": "rgba(24,27,38,0.90)",
     "backdropEdge": "rgba(30,34,48,0.94)",
     "border": "rgba(255,255,255,0.14)",

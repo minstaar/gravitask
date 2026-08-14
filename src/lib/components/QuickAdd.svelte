@@ -93,18 +93,26 @@
   /* ---- 시각 고르기 ---- */
 
   /**
-   * 흔히 쓰는 시각만 늘어놓습니다. 30분 간격이면 대부분 한 번에 집히고,
-   * 하루 끝인 23:59는 마감 기본값이라 따로 둡니다.
+   * 시와 분을 따로 고릅니다.
+   *
+   * 흔한 시각만 늘어놓으면 목록에 없는 시각을 아예 지정할 수 없습니다.
+   * 두 열로 나누면 어떤 시각이든 두 번의 클릭으로 닿습니다. 분은 5분 간격에
+   * 하루 끝인 59분을 더합니다 — 마감을 1분 단위로 맞출 일은 없습니다.
    */
-  const TIMES = $derived.by(() => {
-    const out: string[] = [];
-    for (let h = 8; h <= 23; h++) {
-      out.push(`${pad(h)}:00`);
-      if (h < 23) out.push(`${pad(h)}:30`);
-    }
-    out.push('23:59');
-    return out;
-  });
+  const HOURS = Array.from({ length: 24 }, (_, h) => pad(h));
+  const MINUTES = [...Array.from({ length: 12 }, (_, i) => pad(i * 5)), '59'];
+  const QUICK_TIMES = ['09:00', '12:00', '18:00', '23:59'];
+
+  const curHour = $derived(timeValue.slice(0, 2));
+  const curMin = $derived(timeValue.slice(3, 5));
+
+  function setHour(h: string) {
+    overrideTime = `${h}:${curMin}`;
+  }
+
+  function setMinute(m: string) {
+    overrideTime = `${curHour}:${m}`;
+  }
 
   function pickTime(t: string) {
     overrideTime = t;
@@ -273,19 +281,52 @@
       </button>
 
       {#if timeOpen}
-        <div class="sheet times" role="listbox" aria-label="마감 시각 고르기">
-          {#each TIMES as t (t)}
-            <button
-              type="button"
-              class="tt"
-              class:on={t === timeValue}
-              role="option"
-              aria-selected={t === timeValue}
-              onclick={() => pickTime(t)}
-            >
-              {t}
-            </button>
-          {/each}
+        <div class="sheet times" role="dialog" aria-label="마감 시각 고르기">
+          <div class="quick">
+            {#each QUICK_TIMES as t (t)}
+              <button type="button" onclick={() => pickTime(t)}>{t}</button>
+            {/each}
+          </div>
+
+          <div class="cols">
+            <div class="col" role="listbox" aria-label="시">
+              <span class="colhead">시</span>
+              <div class="scroll">
+                {#each HOURS as h (h)}
+                  <button
+                    type="button"
+                    class="unit"
+                    class:on={h === curHour}
+                    role="option"
+                    aria-selected={h === curHour}
+                    onclick={() => setHour(h)}
+                  >
+                    {h}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="col" role="listbox" aria-label="분">
+              <span class="colhead">분</span>
+              <div class="scroll">
+                {#each MINUTES as m (m)}
+                  <button
+                    type="button"
+                    class="unit"
+                    class:on={m === curMin}
+                    role="option"
+                    aria-selected={m === curMin}
+                    onclick={() => setMinute(m)}
+                  >
+                    {m}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <button type="button" class="done" onclick={() => (timeOpen = false)}>확인</button>
         </div>
       {/if}
     </div>
@@ -555,33 +596,77 @@
   /* ---- 시각 ---- */
 
   .times {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 3px;
-    padding: 6px;
-    width: 208px;
-    max-height: 188px;
-    overflow-y: auto;
+    padding: 8px;
+    gap: 7px;
+    width: 176px;
   }
 
-  .tt {
+  .cols {
+    display: flex;
+    gap: 6px;
+  }
+
+  .col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .colhead {
+    font-size: 9.5px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.42);
+  }
+
+  /* 선택된 값이 보이도록 목록을 스크롤로 두되, 높이를 낮춰
+     팝오버가 위젯보다 커지지 않게 합니다. */
+  .scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 152px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .unit {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
     color: #ededf5;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid transparent;
     border-radius: 6px;
     padding: 4px 0;
     cursor: pointer;
+    flex: none;
   }
 
-  .tt:hover {
+  .unit:hover {
     background: rgba(255, 255, 255, 0.16);
   }
 
-  .tt.on {
+  .unit.on {
     background: rgba(90, 80, 190, 0.55);
     border-color: rgba(160, 150, 255, 0.6);
+  }
+
+  .done {
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #ededf5;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 7px;
+    padding: 5px 0;
+    cursor: pointer;
+  }
+
+  .done:hover {
+    background: rgba(255, 255, 255, 0.2);
   }
 
   .lbl,
