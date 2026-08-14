@@ -11,6 +11,7 @@
     toggleTask,
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
+  import { theme } from './lib/theme';
   import type { NewTask } from './lib/types';
 
   // 창 테두리를 없앴기 때문에 앱 안에서 끌 수 있는 영역을 직접 제공해야 합니다.
@@ -81,13 +82,15 @@
   }
 
   $effect(() => {
-    // 내용이 바뀌면 창 크기도 따라갑니다
+    // 내용이 바뀌면 창 크기도 따라갑니다.
     void store.tasks;
     void store.categories;
     void store.now;
     if (!inTauri) return;
-    const id = setTimeout(fitWindow, 60);
-    return () => clearTimeout(id);
+    // 타이머로 미루면 그 사이 내용이 창보다 커져 스크롤바가 번쩍입니다.
+    // 다음 프레임에 바로 맞춥니다.
+    const id = requestAnimationFrame(() => void fitWindow());
+    return () => cancelAnimationFrame(id);
   });
 
   async function seedIfEmpty() {
@@ -117,7 +120,9 @@
 
 <main
   class:desktop={!inTauri}
+  class:active={interacting}
   style:padding="{PAD}px"
+  style:--backdrop={theme.surface.backdrop}
   onmouseenter={() => (hovering = true)}
   onmouseleave={() => (hovering = false)}
 >
@@ -142,10 +147,8 @@
           {category}
           tasks={store.tasks.filter((t) => t.categoryId === category.id)}
           now={store.now}
-          active={interacting}
           {reducedMotion}
           onToggle={toggleTask}
-          onRemove={removeTask}
         />
       {/each}
     </div>
@@ -183,6 +186,13 @@
     justify-content: center;
     /* 위젯에서 스크롤은 최후의 수단입니다. 창이 내용에 맞춰지므로 필요 없습니다 */
     overflow: hidden;
+    transition: background 0.16s ease;
+  }
+
+  /* 조작 중에는 위젯 뒤에 판을 깝니다. 카드 표면만 진하게 하면 카드 사이로
+     배경화면이 그대로 비쳐 오히려 산만합니다. */
+  main.active {
+    background: var(--backdrop);
   }
 
   /* 브라우저 개발용 가짜 바탕화면. Tauri에서는 창이 투명해야 하므로 뺍니다 */

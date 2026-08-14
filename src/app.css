@@ -15,4 +15,6 @@ body {
   min-height: 100vh;
   background: transparent;
   color: #ededf5;
+  /* 창이 내용에 맞춰 커지기 직전 한 프레임 동안 스크롤바가 번쩍이는 걸 막습니다 */
+  overflow: hidden;
 }

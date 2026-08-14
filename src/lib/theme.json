@@ -5,6 +5,8 @@
   "layout": {
     "runwayHours": 24,
     "runwayHeight": 116,
+    "runwayCollapsed": 26,
+    "runwayTicks": [0.5],
     "cardHeight": 40,
     "queueGap": 46,
     "overdueGap": 44,
@@ -54,7 +56,7 @@
 
   "surface": {
     "background": "rgba(18,19,27,0.72)",
-    "backgroundActive": "rgba(13,14,20,0.95)",
+    "backdrop": "rgba(8,9,13,0.90)",
     "border": "rgba(255,255,255,0.14)",
     "blur": 22,
     "text": "#F2F2F8",

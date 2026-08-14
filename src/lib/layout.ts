@@ -29,6 +29,8 @@ export interface ColumnLayout {
   deadlineY: number;
   /** 24시간 경계선의 바닥 기준 높이 */
   boundaryY: number;
+  /** 지금 활주로가 차지한 높이 (접혔는지 펼쳐졌는지) */
+  runwayHeight: number;
   placed: Placed[];
   hiddenQueue: number;
   ticks: { label: string; y: number }[];
@@ -59,15 +61,17 @@ export function computeLayout(
   const visibleQueue = queue.slice(0, L.maxQueueVisible);
   const hiddenQueue = queue.length - visibleQueue.length;
 
-  // 지난 항목이 없으면 그 구역은 아예 존재하지 않습니다.
+  // 쓸 일이 없는 구역은 자리를 비웁니다. 지남 구역도, 활주로도 마찬가지입니다.
+  // 오늘 마감이 없는 날이 대부분인데 활주로가 늘 같은 높이를 차지할 이유가 없습니다.
   const overdueHeight = overdue.length > 0 ? overdue.length * L.overdueGap + L.floor : 0;
+  const runwayHeight = runway.length > 0 ? L.runwayHeight : L.runwayCollapsed;
 
   const deadlineY = overdueHeight;
-  const boundaryY = deadlineY + L.runwayHeight;
+  const boundaryY = deadlineY + runwayHeight;
   const queueHeight = Math.max(L.minQueueHeight, visibleQueue.length * L.queueGap + 10);
   const height = boundaryY + queueHeight;
 
-  const runwayTravel = L.runwayHeight - L.cardHeight - 10;
+  const runwayTravel = runwayHeight - L.cardHeight - 10;
   const placed: Placed[] = [];
 
   // 지남 — 마감선 아래로. 오래 밀린 것일수록 더 깊이 가라앉습니다.
@@ -107,13 +111,17 @@ export function computeLayout(
     });
   });
 
-  const ticks = [0.25, 0.5, 0.75].map((f) => {
-    const h = L.runwayHours * f;
-    return {
-      label: `${Math.round(h)}h`,
-      y: deadlineY + L.floor + (h / L.runwayHours) * runwayTravel + L.cardHeight / 2,
-    };
-  });
+  // 접힌 활주로에는 눈금을 그릴 자리가 없습니다.
+  const ticks =
+    runway.length > 0
+      ? L.runwayTicks.map((f) => {
+          const h = L.runwayHours * f;
+          return {
+            label: `${Math.round(h)}h`,
+            y: deadlineY + L.floor + (h / L.runwayHours) * runwayTravel + L.cardHeight / 2,
+          };
+        })
+      : [];
 
-  return { height, deadlineY, boundaryY, placed, hiddenQueue, ticks };
+  return { height, deadlineY, boundaryY, runwayHeight, placed, hiddenQueue, ticks };
 }

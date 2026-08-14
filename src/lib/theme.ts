@@ -14,9 +14,12 @@ export interface Theme {
   layout: {
     /** 활주로 구역의 경계. 이 시간 이내면 시간 눈금 위에 놓입니다 */
     runwayHours: number;
-    /** 활주로 구역의 높이. 오늘 마감이 여러 건 몰리는 일은 드물어서
-     *  기둥의 큰 비중을 줄 이유가 없습니다 */
+    /** 오늘 마감이 있을 때의 활주로 높이 */
     runwayHeight: number;
+    /** 오늘 마감이 없을 때. 지남 구역처럼, 쓸 일이 없으면 자리를 비웁니다 */
+    runwayCollapsed: number;
+    /** 활주로 눈금 위치(0~1). 촘촘하면 오히려 안 읽힙니다 */
+    runwayTicks: number[];
     cardHeight: number;
     queueGap: number;
     overdueGap: number;
@@ -56,8 +59,8 @@ export interface Theme {
   };
   surface: {
     background: string;
-    /** 조작 중일 때. 배경이 비치면 글자를 읽기 어려우므로 불투명에 가깝게 */
-    backgroundActive: string;
+    /** 조작 중 위젯 뒤에 까는 판. 배경화면이 비치면 글자를 읽기 어렵습니다 */
+    backdrop: string;
     border: string;
     blur: number;
     text: string;

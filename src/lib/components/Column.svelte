@@ -8,30 +8,24 @@
     category,
     tasks,
     now,
-    active = false,
     reducedMotion = false,
     onToggle,
-    onRemove,
   }: {
     category: Category;
     tasks: Task[];
     now: number;
-    /** 조작 중인지. 배경이 비치면 글자를 읽기 어려우므로 불투명하게 바꿉니다 */
-    active?: boolean;
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
-    onRemove: (id: string) => void;
   } = $props();
 
   const layout = $derived(computeLayout(tasks, now, { reducedMotion }));
   const accent = $derived(`hsl(${category.hue} 55% 62%)`);
-  const surface = $derived(active ? theme.surface.backgroundActive : theme.surface.background);
 </script>
 
 <section
   class="widget"
   style:--accent={accent}
-  style:--surface={surface}
+  style:--surface={theme.surface.background}
   style:--surface-border={theme.surface.border}
   style:--text={theme.surface.text}
   style:--text-muted={theme.surface.textMuted}
@@ -50,7 +44,7 @@
     <div
       class="runway"
       style:bottom="{layout.deadlineY}px"
-      style:height="{theme.layout.runwayHeight}px"
+      style:height="{layout.runwayHeight}px"
     ></div>
     <div class="axis"></div>
 
@@ -66,12 +60,8 @@
       <span class="more">외 {layout.hiddenQueue}건</span>
     {/if}
 
-    <span class="zonetag" style:bottom="{layout.height - 11}px">대기</span>
-    <span class="zonetag" style:bottom="{layout.boundaryY - 13}px">임박</span>
-    {#if layout.deadlineY > 0}
-      <span class="zonetag" style:bottom="{layout.deadlineY - 13}px">지남</span>
-    {/if}
-
+    <!-- 구역 이름표는 두지 않습니다. 경계선·눈금·카드 위치가 이미 구역을
+         말해 주고, 라벨은 할 일 제목과 섞여 읽기만 방해합니다. -->
     {#each layout.placed as p (p.task.id)}
       <TaskCard
         task={p.task}
@@ -80,7 +70,6 @@
         remaining={p.remaining}
         {reducedMotion}
         {onToggle}
-        {onRemove}
       />
     {/each}
 
@@ -179,16 +168,6 @@
     font-size: 9px;
     color: var(--text-muted);
     letter-spacing: 0.1em;
-  }
-
-  .zonetag {
-    position: absolute;
-    left: 52px;
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 8.5px;
-    letter-spacing: 0.16em;
-    color: var(--text-muted);
-    opacity: 0.45;
   }
 
   .more {

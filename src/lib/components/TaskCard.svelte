@@ -13,7 +13,6 @@
     remaining,
     reducedMotion = false,
     onToggle,
-    onRemove,
   }: {
     task: Task;
     visual: Visual;
@@ -21,7 +20,6 @@
     remaining: string;
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
-    onRemove: (id: string) => void;
   } = $props();
 
   // 카드가 경계를 넘어 활주로로 떨어지는 순간이 이 위젯의 핵심 알림입니다.
@@ -112,8 +110,6 @@
     </span>
     <span class="due">{remaining}</span>
   </span>
-
-  <button class="kill" onclick={() => onRemove(task.id)} aria-label="{task.title} 삭제">×</button>
 </div>
 
 <style>
@@ -169,27 +165,6 @@
 
   .check:hover {
     background: rgba(255, 255, 255, 0.18);
-  }
-
-  .kill {
-    flex: none;
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.32);
-    font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 2px 3px;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-
-  .card:hover .kill {
-    opacity: 1;
-  }
-
-  .kill:hover {
-    color: rgba(255, 255, 255, 0.85);
   }
 
   :global(button:focus-visible) {
