@@ -1,0 +1,56 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Gravitask",
+  "version": "0.1.0",
+  "identifier": "io.github.minstaar.gravitask",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5273",
+    "beforeDevCommand": "npm run dev -- --port 5273 --strictPort",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Gravitask",
+        "width": 620,
+        "height": 520,
+        "minWidth": 320,
+        "minHeight": 300,
+        "resizable": true,
+        "fullscreen": false,
+
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+
+        "alwaysOnBottom": true,
+        "skipTaskbar": true,
+
+        "windowEffects": {
+          "effects": ["acrylic"],
+          "state": "active",
+          "radius": 16,
+          "color": [18, 19, 27, 190]
+        }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

@@ -13,6 +13,10 @@
   import { MS_HOUR } from './lib/urgency';
   import type { NewTask } from './lib/types';
 
+  // 창 테두리를 없앴기 때문에 앱 안에서 끌 수 있는 영역을 직접 제공해야 합니다.
+  // 브라우저 개발 중에는 이 막대가 필요 없습니다.
+  const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
   let categoryId = $state(store.categories[0]?.id ?? 'study');
   let quickAdd: QuickAdd | undefined = $state();
   let reducedMotion = $state(false);
@@ -68,8 +72,14 @@
   const sorted = $derived([...store.categories].sort((a, b) => a.order - b.order));
 </script>
 
-<main>
+<main class:desktop={!inTauri}>
   <div class="panel">
+    {#if inTauri}
+      <div class="dragbar" data-tauri-drag-region>
+        <span class="brand" data-tauri-drag-region>Gravitask</span>
+      </div>
+    {/if}
+
     <QuickAdd
       bind:this={quickAdd}
       categories={sorted}
@@ -91,7 +101,8 @@
       {/each}
     </div>
 
-    <!-- 개발용. Tauri 빌드에서는 제거합니다 -->
+    <!-- 개발 빌드에만 들어갑니다. 프로덕션 번들에서는 통째로 빠집니다 -->
+    {#if import.meta.env.DEV}
     <div class="devbar">
       <span class="lbl">시간 이동</span>
       <input
@@ -111,6 +122,7 @@
             : `+${(offsetHours / 24).toFixed(1)}일`}
       </span>
     </div>
+    {/if}
   </div>
 </main>
 
@@ -121,11 +133,37 @@
     align-items: center;
     justify-content: center;
     padding: 32px 24px;
-    /* 브라우저 개발용 가짜 바탕화면. Tauri에서는 투명 창이 됩니다 */
+  }
+
+  /* 브라우저 개발용 가짜 바탕화면. Tauri에서는 창이 투명해야 하므로 뺍니다 */
+  .desktop {
     background:
       radial-gradient(680px 420px at 12% -5%, rgba(90, 80, 190, 0.34), transparent 62%),
       radial-gradient(560px 400px at 96% 108%, rgba(20, 120, 130, 0.28), transparent 60%),
       linear-gradient(160deg, #171a26 0%, #0d0f17 55%, #12111c 100%);
+  }
+
+  .dragbar {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    cursor: grab;
+    /* 끌기 영역이 넓어야 잡기 쉽습니다. 위젯은 자주 옮기게 되니까요 */
+    margin: -6px -4px 0;
+    padding: 0 4px;
+  }
+
+  .dragbar:active {
+    cursor: grabbing;
+  }
+
+  .brand {
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.28);
+    user-select: none;
   }
 
   .panel {

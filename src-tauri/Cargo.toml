@@ -1,0 +1,25 @@
+[package]
+name = "gravitask"
+version = "0.1.0"
+description = "마감이 다가오는 걸 느끼게 하는 바탕화면 할 일 위젯"
+authors = ["minstaar"]
+license = "MIT"
+repository = "https://github.com/minstaar/gravitask"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "gravitask_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+# tray-icon: 위젯이 항상 맨 아래에 깔리고 작업표시줄에도 없으므로,
+# 트레이가 유일한 되찾기 수단입니다. image-png는 트레이 아이콘 디코딩용.
+tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
+tauri-plugin-log = "2"
