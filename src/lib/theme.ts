@@ -26,7 +26,11 @@ export interface Theme {
     minQueueHeight: number;
     floor: number;
     maxQueueVisible: number;
-    columnWidth: number;
+    /** 범주 레인 하나의 폭. 균등 폭이라 항목 내용에 따라 창이 들썩이지 않습니다 */
+    laneWidth: number;
+    laneGap: number;
+    /** 시간 눈금이 들어가는 왼쪽 여백 */
+    gutter: number;
   };
   /** 글자 크기(px). 위젯은 흘끗 보는 물건이라 본문이 작으면 제 역할을 못 합니다 */
   type: {

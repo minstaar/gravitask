@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { untrack } from 'svelte';
   import { Spring } from 'svelte/motion';
   import { cubicIn } from 'svelte/easing';
@@ -11,7 +11,6 @@
     visual,
     targetY,
     remaining,
-    category,
     reducedMotion = false,
     onToggle,
   }: {
@@ -19,8 +18,6 @@
     visual: Visual;
     targetY: number;
     remaining: string;
-    /** 축을 공유하므로 카드가 스스로 어느 범주인지 밝혀야 합니다 */
-    category?: { name: string; hue: number };
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
   } = $props();
@@ -108,28 +105,20 @@
   ></button>
 
   <span class="body">
-    <span class="line">
-      {#if category}
-        <span class="dot" style:background="hsl({category.hue} 58% 62%)"></span>
-      {/if}
-      <span class="title" style:font-weight={500 + Math.round(visual.urgency * 2) * 100}>
-        {task.title}
-      </span>
+    <span class="title" style:font-weight={500 + Math.round(visual.urgency * 2) * 100}>
+      {task.title}
     </span>
-    <span class="line">
-      <span class="due">{remaining}</span>
-      {#if category}
-        <span class="cat" style:color="hsl({category.hue} 45% 70%)">{category.name}</span>
-      {/if}
-    </span>
+    <span class="due">{remaining}</span>
   </span>
 </div>
 
 <style>
+  /* 레인 폭을 그대로 씁니다. 범주는 레인 머리가 밝히므로 카드는 제목과
+     남은 시간만 담고, 좁은 폭에서는 제목을 말줄임합니다. */
   .card {
     position: absolute;
-    left: 54px;
-    right: 2px;
+    left: 0;
+    right: 0;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -148,12 +137,6 @@
     line-height: 1.25;
   }
 
-  .line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
 
   .title {
     font-size: var(--fs-title);
@@ -162,22 +145,6 @@
     text-overflow: ellipsis;
   }
 
-  /* 범주는 점과 이름으로만 밝힙니다. 카드 색은 긴급도가 계속 씁니다 —
-     한 카드에서 두 색 체계가 다투면 둘 다 안 읽힙니다. */
-  .dot {
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-  }
-
-  .cat {
-    font-size: var(--fs-due);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    opacity: 0.9;
-  }
 
   /* opacity로 흐리게 하면 스크림 위에서 대비가 4.5:1 아래로 떨어집니다.
      토큰 색을 직접 쓰고, 크기도 9.5px에서 10px로 올립니다. */

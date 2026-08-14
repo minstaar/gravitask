@@ -13,7 +13,9 @@
     "minQueueHeight": 80,
     "floor": 6,
     "maxQueueVisible": 8,
-    "columnWidth": 340
+    "laneWidth": 158,
+    "laneGap": 10,
+    "gutter": 44
   },
 
   "type": {
