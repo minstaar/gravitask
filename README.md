@@ -95,6 +95,39 @@ npm run test:parse # 자연어 파서 명세
 **아직 없는 것:** Tauri 껍데기(투명 창, always-on-bottom, 트레이, 자동 시작),
 범주 편집 UI, 자동 업데이트.
 
+## 배포
+
+태그를 밀면 GitHub Actions가 Windows 인스톨러를 만들어 Releases에 **초안**으로
+올립니다. 내용을 확인하고 직접 게시하는 흐름입니다.
+
+```bash
+npm version patch    # package.json과 tauri.conf.json의 버전을 맞춘 뒤
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+업데이터는 릴리스에 함께 올라가는 `latest.json`을 봅니다. 서명 개인 키는
+저장소에 두지 않고 GitHub Actions Secrets에만 있습니다.
+
+| 시크릿 | 내용 |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | `gravitask.key` 파일 내용 전체 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 키 생성 시 정한 비밀번호 |
+
+**개인 키를 잃으면 업데이트 경로도 잃습니다.** 기존 사용자는 다른 키로 서명된
+업데이트를 거부하므로 전원이 수동 재설치를 해야 합니다. 백업해 두세요.
+
+릴리스 워크플로는 태그 푸시에서만 돕니다. 이 저장소는 공개라, `pull_request`로
+트리거하면 포크에서 온 코드가 서명 키에 접근할 수 있습니다.
+
+## 알려진 제약
+
+- **바탕화면 유지 동작은 환경에 따라 다를 수 있습니다.** 위젯은 포커스가 없을
+  때 '바탕화면 바로 위'로 자리를 되돌려 Win+D를 견디는데, 이 동작은 Windows 11
+  한 대에서만 검증했습니다. 다른 셸 확장(Fences, 배경화면 엔진 등)과 z-order를
+  두고 다툴 수 있습니다.
+- **서명 인증서가 없어** 첫 실행에서 SmartScreen 경고가 뜹니다.
+
 ## 로드맵
 
 - **v1** — 로컬 할 일만. 캘린더 연동 없음. 서명 없이 배포하고 업데이터 뼈대만 포함

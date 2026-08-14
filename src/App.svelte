@@ -9,7 +9,6 @@
     refresh,
     removeCategory,
     renameCategory,
-    setDevOffset,
     startClock,
     store,
     toggleTask,
@@ -25,7 +24,6 @@
   let categoryId = $state(store.categories[0]?.id ?? 'study');
   let quickAdd: QuickAdd | undefined = $state();
   let reducedMotion = $state(false);
-  let offsetHours = $state(0);
   let panel: HTMLElement | undefined = $state();
 
   /** 마우스가 올라와 있거나 포커스를 쥐고 있으면 조작 중으로 봅니다 */
@@ -130,10 +128,6 @@
     for (const t of demo) await addTask(t);
   }
 
-  function onOffset(e: Event) {
-    offsetHours = +(e.target as HTMLInputElement).value;
-    setDevOffset(offsetHours * MS_HOUR);
-  }
 
   const sorted = $derived([...store.categories].sort((a, b) => a.order - b.order));
 </script>
@@ -196,28 +190,6 @@
       onToggle={toggleTask}
     />
 
-    <!-- 개발 빌드에만 들어갑니다. 프로덕션 번들에서는 통째로 빠집니다 -->
-    {#if import.meta.env.DEV}
-      <div class="devbar">
-        <span class="lbl">시간 이동</span>
-        <input
-          type="range"
-          min="0"
-          max="620"
-          step="1"
-          value={offsetHours}
-          oninput={onOffset}
-          aria-label="개발용 시간 이동"
-        />
-        <span class="val">
-          {offsetHours === 0
-            ? '지금'
-            : offsetHours < 48
-              ? `+${offsetHours}시간`
-              : `+${(offsetHours / 24).toFixed(1)}일`}
-        </span>
-      </div>
-    {/if}
   </div>
 </main>
 
@@ -327,50 +299,9 @@
     user-select: none;
   }
 
-  .devbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
 
-  .lbl,
-  .val {
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    color: rgba(255, 255, 255, 0.4);
-    white-space: nowrap;
-  }
 
-  .val {
-    color: #cfcbff;
-    letter-spacing: 0;
-    font-variant-numeric: tabular-nums;
-    min-width: 62px;
-  }
 
-  input[type='range'] {
-    -webkit-appearance: none;
-    appearance: none;
-    flex: 1;
-    height: 18px;
-    background: transparent;
-    cursor: pointer;
-  }
 
-  input[type='range']::-webkit-slider-runnable-track {
-    height: 3px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.18);
-  }
 
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    background: #cfcbff;
-    margin-top: -5px;
-    border: 2px solid #4a45b5;
-  }
 </style>

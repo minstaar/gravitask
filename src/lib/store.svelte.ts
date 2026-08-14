@@ -23,10 +23,8 @@ export const source: TaskSource = new LocalSource();
 export const store = $state({
   tasks: [] as Task[],
   categories: loadCategories(),
-  /** 렌더링 기준 시각. 실제 시계 + devOffset */
+  /** 렌더링 기준 시각 */
   now: Date.now(),
-  /** 개발용 시간 이동(ms). 배포 빌드에서는 항상 0 */
-  devOffset: 0,
 });
 
 export async function refresh(): Promise<void> {
@@ -99,7 +97,7 @@ export function startClock(intervalMs = 30_000): () => void {
     const real = Date.now();
     const drifted = real - last > intervalMs * 3;
     last = real;
-    store.now = real + store.devOffset;
+    store.now = real;
     if (drifted) void refresh();
   };
 
@@ -118,7 +116,3 @@ export function startClock(intervalMs = 30_000): () => void {
   };
 }
 
-export function setDevOffset(ms: number): void {
-  store.devOffset = ms;
-  store.now = Date.now() + ms;
-}

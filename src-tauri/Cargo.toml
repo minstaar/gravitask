@@ -27,3 +27,4 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Wi
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-updater = "2.10.1"
