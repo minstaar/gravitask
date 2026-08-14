@@ -1,49 +1,39 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { theme } from '../theme';
   import { computeLayout } from '../layout';
   import type { Category, Task } from '../types';
   import TaskCard from './TaskCard.svelte';
 
   let {
-    category,
     tasks,
+    categories,
     now,
     reducedMotion = false,
-    editing = false,
-    canMoveLeft = false,
-    canMoveRight = false,
-    hues = [],
     onToggle,
-    onRename,
-    onRecolor,
-    onMove,
-    onRemove,
   }: {
-    category: Category;
     tasks: Task[];
+    categories: Category[];
     now: number;
     reducedMotion?: boolean;
-    editing?: boolean;
-    canMoveLeft?: boolean;
-    canMoveRight?: boolean;
-    hues?: number[];
     onToggle: (t: Task) => void;
-    onRename?: (id: string, name: string) => void;
-    onRecolor?: (id: string, hue: number) => void;
-    onMove?: (id: string, delta: number) => void;
-    onRemove?: (id: string) => void;
   } = $props();
 
   const layout = $derived(computeLayout(tasks, now, { reducedMotion }));
-  const accent = $derived(`hsl(${category.hue} 55% 62%)`);
-
-  // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
-  const isEmpty = $derived(tasks.every((t) => t.completedAt !== null));
+  const byId = $derived(new Map(categories.map((c) => [c.id, c])));
 </script>
 
+<!--
+  축 하나를 모든 범주가 공유합니다.
+
+  범주마다 축을 두면 뼈대(축선·활주로·마감선·경계선·눈금)가 통째로 복제돼
+  범주 수에 비례해 공간을 먹습니다. 그보다 큰 문제는, 축이 다르면 높이의
+  의미도 달라서 "학업의 3시간 뒤"와 "생활의 1시간 뒤" 중 뭐가 급한지 비교할
+  수 없다는 것입니다. 리마인더가 답해야 할 가장 중요한 질문을 구조가 막습니다.
+
+  하나로 합치면 높이가 곧 전역 우선순위가 됩니다. 위에서부터 읽으면 그게 순서입니다.
+-->
 <section
   class="widget"
-  style:--accent={accent}
   style:--surface={theme.surface.background}
   style:--surface-border={theme.surface.border}
   style:--text={theme.surface.text}
@@ -52,62 +42,11 @@
   style:--boundary={theme.surface.boundary}
   style:--deadline={theme.surface.deadline}
   style:--fs-title="{theme.type.title}px"
-  style:--fs-category="{theme.type.category}px"
   style:--fs-due="{theme.type.due}px"
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-axis="{theme.type.axis}px"
   style:width="{theme.layout.columnWidth}px"
 >
-  {#if editing}
-    <div class="editor">
-      <div class="row">
-        <input
-          class="rename"
-          value={category.name}
-          aria-label="범주 이름"
-          oninput={(e) => onRename?.(category.id, e.currentTarget.value)}
-        />
-        <button
-          class="danger"
-          disabled={!isEmpty}
-          title={isEmpty ? '범주 삭제' : '할 일이 남아 있어 지울 수 없습니다'}
-          aria-label="범주 삭제"
-          onclick={() => onRemove?.(category.id)}>삭제</button
-        >
-      </div>
-      <div class="row">
-        <div class="swatches">
-          {#each hues as hue (hue)}
-            <button
-              class="swatch"
-              class:on={hue === category.hue}
-              style:background="hsl({hue} 55% 62%)"
-              aria-label="색 {hue}"
-              onclick={() => onRecolor?.(category.id, hue)}
-            ></button>
-          {/each}
-        </div>
-        <button
-          class="nudge"
-          disabled={!canMoveLeft}
-          aria-label="왼쪽으로"
-          onclick={() => onMove?.(category.id, -1)}>‹</button
-        >
-        <button
-          class="nudge"
-          disabled={!canMoveRight}
-          aria-label="오른쪽으로"
-          onclick={() => onMove?.(category.id, 1)}>›</button
-        >
-      </div>
-    </div>
-  {:else}
-    <header>
-      <span class="name">{category.name}</span>
-      <span class="count">{layout.placed.length + layout.hiddenQueue} items</span>
-    </header>
-  {/if}
-
   <div class="column" style:height="{layout.height}px">
     <!-- 활주로 바닥 틴트. 비어 있어도 남겨둡니다 — 빈 활주로는 "오늘은 급한 게 없다"는 정보입니다 -->
     <div
@@ -129,14 +68,13 @@
       <span class="more">외 {layout.hiddenQueue}건</span>
     {/if}
 
-    <!-- 구역 이름표는 두지 않습니다. 경계선·눈금·카드 위치가 이미 구역을
-         말해 주고, 라벨은 할 일 제목과 섞여 읽기만 방해합니다. -->
     {#each layout.placed as p (p.task.id)}
       <TaskCard
         task={p.task}
         visual={p.visual}
         targetY={p.y}
         remaining={p.remaining}
+        category={byId.get(p.task.categoryId)}
         {reducedMotion}
         {onToggle}
       />
@@ -165,115 +103,11 @@
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
     color: var(--text);
     flex: none;
-    transition: background 0.18s ease;
-  }
-
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-  }
-
-  .name {
-    font-size: var(--fs-category);
-    font-weight: 650;
-    letter-spacing: 0.02em;
-    /* 범주는 hue로만 구분합니다 — 긴급도의 채도·명도와 충돌하지 않게 */
-    color: var(--accent);
-  }
-
-  .count {
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: var(--fs-meta);
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
   }
 
   .column {
     position: relative;
     transition: height 0.25s ease;
-  }
-
-  /* ---- 편집 모드 ---- */
-
-  .editor {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    margin-bottom: 12px;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .rename {
-    flex: 1;
-    min-width: 0;
-    font: inherit;
-    font-size: var(--fs-category);
-    font-weight: 650;
-    color: var(--accent);
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 7px;
-    padding: 4px 8px;
-  }
-
-  .swatches {
-    display: flex;
-    gap: 4px;
-    flex: 1;
-  }
-
-  .swatch {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    border: 1.5px solid transparent;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .swatch.on {
-    border-color: var(--text);
-  }
-
-  .nudge,
-  .danger {
-    font: inherit;
-    font-size: var(--fs-meta);
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 7px;
-    cursor: pointer;
-    padding: 3px 8px;
-    flex: none;
-  }
-
-  .nudge {
-    padding: 1px 8px;
-    font-size: 14px;
-    line-height: 1.1;
-  }
-
-  .nudge:disabled,
-  .danger:disabled {
-    opacity: 0.32;
-    cursor: default;
-  }
-
-  .danger:not(:disabled):hover {
-    background: rgba(224, 86, 111, 0.28);
-    border-color: rgba(224, 86, 111, 0.5);
-  }
-
-  .nudge:not(:disabled):hover {
-    background: rgba(255, 255, 255, 0.16);
   }
 
   .runway {

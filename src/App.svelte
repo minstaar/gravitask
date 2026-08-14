@@ -1,4 +1,5 @@
-<script lang="ts">
+﻿<script lang="ts">
+  import CategoryEditor from './lib/components/CategoryEditor.svelte';
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
   import {
@@ -131,6 +132,7 @@
   class:active={interacting}
   style:padding="{PAD}px"
   style:--backdrop={theme.surface.backdrop}
+  style:--backdrop-edge={theme.surface.backdropEdge}
   onmouseenter={() => (hovering = true)}
   onmouseleave={() => (hovering = false)}
 >
@@ -160,32 +162,26 @@
       onAdd={addTask}
     />
 
-    <div class="columns">
-      {#each sorted as category, i (category.id)}
-        <Column
-          {category}
-          tasks={store.tasks.filter((t) => t.categoryId === category.id)}
-          now={store.now}
-          {reducedMotion}
-          {editing}
-          canMoveLeft={i > 0}
-          canMoveRight={i < sorted.length - 1}
-          hues={CATEGORY_HUES}
-          onToggle={toggleTask}
-          onRename={renameCategory}
-          onRecolor={recolorCategory}
-          onMove={moveCategory}
-          onRemove={removeCategory}
-        />
-      {/each}
+    {#if editing}
+      <CategoryEditor
+        categories={sorted}
+        tasks={store.tasks}
+        hues={CATEGORY_HUES}
+        onAdd={() => addCategory()}
+        onRename={renameCategory}
+        onRecolor={recolorCategory}
+        onMove={moveCategory}
+        onRemove={removeCategory}
+      />
+    {/if}
 
-      {#if editing}
-        <button class="add-category" onclick={() => addCategory()}>
-          <span>＋</span>
-          범주 추가
-        </button>
-      {/if}
-    </div>
+    <Column
+      tasks={store.tasks}
+      categories={sorted}
+      now={store.now}
+      {reducedMotion}
+      onToggle={toggleTask}
+    />
 
     <!-- 개발 빌드에만 들어갑니다. 프로덕션 번들에서는 통째로 빠집니다 -->
     {#if import.meta.env.DEV}
@@ -228,14 +224,19 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: var(--backdrop);
+    border-radius: 18px;
+    background: linear-gradient(165deg, var(--backdrop-edge), var(--backdrop));
+    border: 1px solid rgba(255, 255, 255, 0.09);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    /* 나갈 때. 천천히 물러나야 잔상이 남고 전환이 부드럽게 느껴집니다 */
+    transition: opacity 0.42s cubic-bezier(0.33, 0, 0.67, 1);
   }
 
   main.active .backdrop {
     opacity: 1;
+    /* 들어올 때. 손을 올린 즉시 반응해야 조작감이 붙습니다 */
+    transition: opacity 0.13s cubic-bezier(0.3, 0, 0.2, 1);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -262,11 +263,6 @@
     z-index: 1;
   }
 
-  .columns {
-    display: flex;
-    gap: 16px;
-    align-items: flex-start;
-  }
 
   .edit-toggle {
     margin-left: auto;
@@ -293,35 +289,6 @@
     background: rgba(90, 80, 190, 0.28);
   }
 
-  .add-category {
-    flex: none;
-    width: 132px;
-    align-self: stretch;
-    min-height: 160px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font: inherit;
-    font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.55);
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px dashed rgba(255, 255, 255, 0.22);
-    border-radius: 14px;
-    cursor: pointer;
-  }
-
-  .add-category span {
-    font-size: 20px;
-    line-height: 1;
-  }
-
-  .add-category:hover {
-    color: rgba(255, 255, 255, 0.9);
-    border-color: rgba(255, 255, 255, 0.45);
-    background: rgba(255, 255, 255, 0.08);
-  }
 
   .dragbar {
     display: flex;

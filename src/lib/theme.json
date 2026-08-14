@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "Default",
   "author": "reminder-widget",
 
@@ -13,7 +13,7 @@
     "minQueueHeight": 80,
     "floor": 6,
     "maxQueueVisible": 8,
-    "columnWidth": 286
+    "columnWidth": 340
   },
 
   "type": {
@@ -64,7 +64,8 @@
 
   "surface": {
     "background": "rgba(18,19,27,0.72)",
-    "backdrop": "rgba(8,9,13,0.90)",
+    "backdrop": "rgba(24,27,38,0.90)",
+    "backdropEdge": "rgba(30,34,48,0.94)",
     "border": "rgba(255,255,255,0.14)",
     "blur": 22,
     "text": "#F2F2F8",

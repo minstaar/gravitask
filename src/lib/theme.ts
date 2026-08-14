@@ -71,6 +71,8 @@ export interface Theme {
     background: string;
     /** 조작 중 위젯 뒤에 까는 판. 배경화면이 비치면 글자를 읽기 어렵습니다 */
     backdrop: string;
+    /** 판의 위쪽 가장자리 색. 미묘한 기울기가 순색 판보다 덜 투박합니다 */
+    backdropEdge: string;
     border: string;
     blur: number;
     text: string;
