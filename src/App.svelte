@@ -2,9 +2,14 @@
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
   import {
+    addCategory,
     addTask,
+    CATEGORY_HUES,
+    moveCategory,
+    recolorCategory,
     refresh,
-    removeTask,
+    removeCategory,
+    renameCategory,
     setDevOffset,
     startClock,
     store,
@@ -28,6 +33,9 @@
   let hovering = $state(false);
   let focused = $state(false);
   const interacting = $derived(hovering || focused);
+
+  /** 편집 모드. 평소에는 위젯을 깔끔하게 두고, 손댈 때만 조작부를 드러냅니다 */
+  let editing = $state(false);
 
   $effect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -131,11 +139,18 @@
   <div class="backdrop" aria-hidden="true"></div>
 
   <div class="panel" bind:this={panel}>
-    {#if inTauri}
-      <div class="dragbar" data-tauri-drag-region>
-        <span class="brand" data-tauri-drag-region>Gravitask</span>
-      </div>
-    {/if}
+    <div class="dragbar" data-tauri-drag-region={inTauri ? true : undefined}>
+      <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>Gravitask</span>
+      <button
+        class="edit-toggle"
+        class:on={editing}
+        aria-pressed={editing}
+        title={editing ? '편집 끝내기' : '범주 편집'}
+        onclick={() => (editing = !editing)}
+      >
+        {editing ? '완료' : '범주 편집'}
+      </button>
+    </div>
 
     <QuickAdd
       bind:this={quickAdd}
@@ -146,15 +161,30 @@
     />
 
     <div class="columns">
-      {#each sorted as category (category.id)}
+      {#each sorted as category, i (category.id)}
         <Column
           {category}
           tasks={store.tasks.filter((t) => t.categoryId === category.id)}
           now={store.now}
           {reducedMotion}
+          {editing}
+          canMoveLeft={i > 0}
+          canMoveRight={i < sorted.length - 1}
+          hues={CATEGORY_HUES}
           onToggle={toggleTask}
+          onRename={renameCategory}
+          onRecolor={recolorCategory}
+          onMove={moveCategory}
+          onRemove={removeCategory}
         />
       {/each}
+
+      {#if editing}
+        <button class="add-category" onclick={() => addCategory()}>
+          <span>＋</span>
+          범주 추가
+        </button>
+      {/if}
     </div>
 
     <!-- 개발 빌드에만 들어갑니다. 프로덕션 번들에서는 통째로 빠집니다 -->
@@ -236,6 +266,61 @@
     display: flex;
     gap: 16px;
     align-items: flex-start;
+  }
+
+  .edit-toggle {
+    margin-left: auto;
+    font: inherit;
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.45);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+
+  .edit-toggle:hover {
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .edit-toggle.on {
+    color: #cfcbff;
+    border-color: rgba(160, 150, 255, 0.55);
+    background: rgba(90, 80, 190, 0.28);
+  }
+
+  .add-category {
+    flex: none;
+    width: 132px;
+    align-self: stretch;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    border-radius: 14px;
+    cursor: pointer;
+  }
+
+  .add-category span {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .add-category:hover {
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .dragbar {

@@ -9,17 +9,36 @@
     tasks,
     now,
     reducedMotion = false,
+    editing = false,
+    canMoveLeft = false,
+    canMoveRight = false,
+    hues = [],
     onToggle,
+    onRename,
+    onRecolor,
+    onMove,
+    onRemove,
   }: {
     category: Category;
     tasks: Task[];
     now: number;
     reducedMotion?: boolean;
+    editing?: boolean;
+    canMoveLeft?: boolean;
+    canMoveRight?: boolean;
+    hues?: number[];
     onToggle: (t: Task) => void;
+    onRename?: (id: string, name: string) => void;
+    onRecolor?: (id: string, hue: number) => void;
+    onMove?: (id: string, delta: number) => void;
+    onRemove?: (id: string) => void;
   } = $props();
 
   const layout = $derived(computeLayout(tasks, now, { reducedMotion }));
   const accent = $derived(`hsl(${category.hue} 55% 62%)`);
+
+  // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
+  const isEmpty = $derived(tasks.every((t) => t.completedAt !== null));
 </script>
 
 <section
@@ -39,10 +58,55 @@
   style:--fs-axis="{theme.type.axis}px"
   style:width="{theme.layout.columnWidth}px"
 >
-  <header>
-    <span class="name">{category.name}</span>
-    <span class="count">{layout.placed.length + layout.hiddenQueue} items</span>
-  </header>
+  {#if editing}
+    <div class="editor">
+      <div class="row">
+        <input
+          class="rename"
+          value={category.name}
+          aria-label="범주 이름"
+          oninput={(e) => onRename?.(category.id, e.currentTarget.value)}
+        />
+        <button
+          class="danger"
+          disabled={!isEmpty}
+          title={isEmpty ? '범주 삭제' : '할 일이 남아 있어 지울 수 없습니다'}
+          aria-label="범주 삭제"
+          onclick={() => onRemove?.(category.id)}>삭제</button
+        >
+      </div>
+      <div class="row">
+        <div class="swatches">
+          {#each hues as hue (hue)}
+            <button
+              class="swatch"
+              class:on={hue === category.hue}
+              style:background="hsl({hue} 55% 62%)"
+              aria-label="색 {hue}"
+              onclick={() => onRecolor?.(category.id, hue)}
+            ></button>
+          {/each}
+        </div>
+        <button
+          class="nudge"
+          disabled={!canMoveLeft}
+          aria-label="왼쪽으로"
+          onclick={() => onMove?.(category.id, -1)}>‹</button
+        >
+        <button
+          class="nudge"
+          disabled={!canMoveRight}
+          aria-label="오른쪽으로"
+          onclick={() => onMove?.(category.id, 1)}>›</button
+        >
+      </div>
+    </div>
+  {:else}
+    <header>
+      <span class="name">{category.name}</span>
+      <span class="count">{layout.placed.length + layout.hiddenQueue} items</span>
+    </header>
+  {/if}
 
   <div class="column" style:height="{layout.height}px">
     <!-- 활주로 바닥 틴트. 비어 있어도 남겨둡니다 — 빈 활주로는 "오늘은 급한 게 없다"는 정보입니다 -->
@@ -129,6 +193,87 @@
   .column {
     position: relative;
     transition: height 0.25s ease;
+  }
+
+  /* ---- 편집 모드 ---- */
+
+  .editor {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 12px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .rename {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: var(--fs-category);
+    font-weight: 650;
+    color: var(--accent);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 7px;
+    padding: 4px 8px;
+  }
+
+  .swatches {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .swatch {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .swatch.on {
+    border-color: var(--text);
+  }
+
+  .nudge,
+  .danger {
+    font: inherit;
+    font-size: var(--fs-meta);
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 7px;
+    cursor: pointer;
+    padding: 3px 8px;
+    flex: none;
+  }
+
+  .nudge {
+    padding: 1px 8px;
+    font-size: 14px;
+    line-height: 1.1;
+  }
+
+  .nudge:disabled,
+  .danger:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+
+  .danger:not(:disabled):hover {
+    background: rgba(224, 86, 111, 0.28);
+    border-color: rgba(224, 86, 111, 0.5);
+  }
+
+  .nudge:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.16);
   }
 
   .runway {

@@ -54,6 +54,56 @@ export function saveCategories(next: Category[]): void {
 }
 
 /**
+ * 범주 색 프리셋.
+ *
+ * 자유로운 색상환을 열어주지 않는 이유: 범주 hue가 긴급도 색(적·주황·황색)과
+ * 겹치면 "급한 건지 범주 색인지" 구분이 안 됩니다. 그 대역을 비워둔 프리셋만
+ * 제공하면 충돌이 구조적으로 막힙니다.
+ */
+export const CATEGORY_HUES = [140, 168, 190, 210, 235, 258, 285, 310];
+
+function nextHue(used: Category[]): number {
+  const taken = new Set(used.map((c) => c.hue));
+  return CATEGORY_HUES.find((h) => !taken.has(h)) ?? CATEGORY_HUES[used.length % CATEGORY_HUES.length];
+}
+
+export function addCategory(name = '새 범주'): string {
+  const id = 'cat-' + Math.random().toString(36).slice(2, 8);
+  const order = store.categories.reduce((m, c) => Math.max(m, c.order), -1) + 1;
+  saveCategories([...store.categories, { id, name, hue: nextHue(store.categories), order }]);
+  return id;
+}
+
+export function renameCategory(id: string, name: string): void {
+  saveCategories(store.categories.map((c) => (c.id === id ? { ...c, name } : c)));
+}
+
+export function recolorCategory(id: string, hue: number): void {
+  saveCategories(store.categories.map((c) => (c.id === id ? { ...c, hue } : c)));
+}
+
+/** delta는 -1(왼쪽) 또는 +1(오른쪽). 이웃과 순서를 맞바꿉니다. */
+export function moveCategory(id: string, delta: number): void {
+  const sorted = [...store.categories].sort((a, b) => a.order - b.order);
+  const i = sorted.findIndex((c) => c.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= sorted.length) return;
+  [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+  saveCategories(sorted.map((c, idx) => ({ ...c, order: idx })));
+}
+
+/**
+ * 비어 있을 때만 지웁니다. 할 일이 남은 범주를 지우면 그 데이터를 잃는데,
+ * 되돌릴 방법이 없습니다. 삭제를 막는 편이 안전하고 설명도 필요 없습니다.
+ */
+export function removeCategory(id: string): boolean {
+  if (store.tasks.some((t) => t.categoryId === id && t.completedAt === null)) return false;
+  if (store.categories.length <= 1) return false;
+  saveCategories(store.categories.filter((c) => c.id !== id));
+  return true;
+}
+
+/**
  * 시계.
  *
  * setInterval만 믿으면 절전/최대 절전에서 복귀했을 때 조용히 깨집니다.
