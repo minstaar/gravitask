@@ -136,7 +136,7 @@
   }
 
   .title {
-    font-size: 12px;
+    font-size: var(--fs-title);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -146,7 +146,7 @@
      토큰 색을 직접 쓰고, 크기도 9.5px에서 10px로 올립니다. */
   .due {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 10px;
+    font-size: var(--fs-due);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     margin-top: 1px;

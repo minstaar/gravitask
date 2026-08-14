@@ -7,13 +7,21 @@
     "runwayHeight": 116,
     "runwayCollapsed": 26,
     "runwayTicks": [0.5],
-    "cardHeight": 40,
-    "queueGap": 46,
-    "overdueGap": 44,
-    "minQueueHeight": 74,
+    "cardHeight": 46,
+    "queueGap": 52,
+    "overdueGap": 50,
+    "minQueueHeight": 80,
     "floor": 6,
     "maxQueueVisible": 8,
-    "columnWidth": 268
+    "columnWidth": 286
+  },
+
+  "type": {
+    "title": 14,
+    "due": 11.5,
+    "category": 14,
+    "meta": 11,
+    "axis": 10
   },
 
   "urgency": {

@@ -126,6 +126,10 @@
   onmouseenter={() => (hovering = true)}
   onmouseleave={() => (hovering = false)}
 >
+  <!-- 배경판을 별도 레이어로 둡니다. background 색을 직접 전환하면 투명 창에서
+       매끄럽지 않은데, opacity는 GPU 합성이라 확실히 부드럽습니다. -->
+  <div class="backdrop" aria-hidden="true"></div>
+
   <div class="panel" bind:this={panel}>
     {#if inTauri}
       <div class="dragbar" data-tauri-drag-region>
@@ -186,13 +190,28 @@
     justify-content: center;
     /* 위젯에서 스크롤은 최후의 수단입니다. 창이 내용에 맞춰지므로 필요 없습니다 */
     overflow: hidden;
-    transition: background 0.16s ease;
+    position: relative;
   }
 
   /* 조작 중에는 위젯 뒤에 판을 깝니다. 카드 표면만 진하게 하면 카드 사이로
      배경화면이 그대로 비쳐 오히려 산만합니다. */
-  main.active {
+  .backdrop {
+    position: fixed;
+    inset: 0;
     background: var(--backdrop);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  main.active .backdrop {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .backdrop {
+      transition: none;
+    }
   }
 
   /* 브라우저 개발용 가짜 바탕화면. Tauri에서는 창이 투명해야 하므로 뺍니다 */
@@ -208,6 +227,9 @@
     display: inline-flex;
     flex-direction: column;
     gap: 14px;
+    /* backdrop이 position:fixed라 그냥 두면 패널 위에 덮입니다 */
+    position: relative;
+    z-index: 1;
   }
 
   .columns {

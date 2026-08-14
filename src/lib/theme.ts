@@ -28,6 +28,16 @@ export interface Theme {
     maxQueueVisible: number;
     columnWidth: number;
   };
+  /** 글자 크기(px). 위젯은 흘끗 보는 물건이라 본문이 작으면 제 역할을 못 합니다 */
+  type: {
+    title: number;
+    due: number;
+    category: number;
+    /** 개수, 경계선 라벨 등 */
+    meta: number;
+    /** 시간 눈금 */
+    axis: number;
+  };
   urgency: {
     horizonHours: number;
     curve: number;

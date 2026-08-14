@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { theme } from '../theme';
   import { computeLayout } from '../layout';
   import type { Category, Task } from '../types';
@@ -32,6 +32,11 @@
   style:--axis={theme.surface.axis}
   style:--boundary={theme.surface.boundary}
   style:--deadline={theme.surface.deadline}
+  style:--fs-title="{theme.type.title}px"
+  style:--fs-category="{theme.type.category}px"
+  style:--fs-due="{theme.type.due}px"
+  style:--fs-meta="{theme.type.meta}px"
+  style:--fs-axis="{theme.type.axis}px"
   style:width="{theme.layout.columnWidth}px"
 >
   <header>
@@ -107,7 +112,7 @@
   }
 
   .name {
-    font-size: 12.5px;
+    font-size: var(--fs-category);
     font-weight: 650;
     letter-spacing: 0.02em;
     /* 범주는 hue로만 구분합니다 — 긴급도의 채도·명도와 충돌하지 않게 */
@@ -116,7 +121,7 @@
 
   .count {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 10px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
   }
@@ -148,7 +153,7 @@
     width: 40px;
     text-align: right;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 9px;
+    font-size: var(--fs-axis);
     color: var(--axis);
     transform: translateY(50%);
   }
@@ -165,7 +170,7 @@
     right: 0;
     top: -15px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 9px;
+    font-size: var(--fs-axis);
     color: var(--text-muted);
     letter-spacing: 0.1em;
   }
@@ -175,7 +180,7 @@
     right: 2px;
     top: -2px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 9px;
+    font-size: var(--fs-axis);
     color: var(--text-muted);
   }
 
@@ -192,7 +197,7 @@
     right: 0;
     bottom: 3px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 9px;
+    font-size: var(--fs-axis);
     color: var(--deadline);
     letter-spacing: 0.08em;
   }
@@ -202,7 +207,7 @@
     left: 54px;
     bottom: 50%;
     margin: 0;
-    font-size: 11.5px;
+    font-size: var(--fs-due);
     color: var(--text-muted);
     opacity: 0.6;
   }
