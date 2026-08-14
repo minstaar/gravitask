@@ -22,7 +22,8 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
-    GetWindowRect, SendMessageTimeoutW, SetParent, WindowFromPoint, GA_PARENT, GA_ROOT, SMTO_NORMAL,
+    GetWindowRect, IsWindowVisible, SendMessageTimeoutW, SetParent, ShowWindow, WindowFromPoint,
+    GA_PARENT, GA_ROOT, SMTO_NORMAL, SW_SHOWNOACTIVATE,
 };
 
 /// Progman에게 배경화면 뒤 WorkerW를 만들라고 시키는 문서화되지 않은 메시지.
@@ -46,7 +47,10 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> i32 {
     if !defview.is_null() {
         let worker_class = wide("WorkerW");
         let worker = unsafe { FindWindowExW(null_mut(), hwnd, worker_class.as_ptr(), null()) };
-        if !worker.is_null() {
+        // 보이지 않는 WorkerW에 붙으면 우리 위젯도 같이 사라집니다. 부모가
+        // 숨겨져 있으면 자식도 숨겨지기 때문입니다. 이 PC에는 WorkerW가 열댓 개
+        // 있는데 대부분은 보이지 않는 껍데기라, 반드시 걸러야 합니다.
+        if !worker.is_null() && unsafe { IsWindowVisible(worker) } != 0 {
             search.found = worker;
             return 0; // 찾았으니 열거를 멈춥니다
         }
@@ -55,12 +59,19 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> i32 {
     1
 }
 
-fn find_desktop_host() -> Option<HWND> {
+/// 붙을 후보를 우선순위대로 돌려줍니다.
+///
+/// 하나만 고르지 않는 이유는, 어느 것이 실제로 배경화면을 그리는 창인지
+/// Windows 버전과 그때그때 셸 상태에 따라 달라지기 때문입니다. 붙여보고
+/// 결과를 확인한 뒤 아니면 다음 후보로 넘어갑니다.
+fn desktop_hosts() -> Vec<HWND> {
+    let mut hosts = Vec::new();
+
     unsafe {
         let progman_class = wide("Progman");
         let progman = FindWindowW(progman_class.as_ptr(), null());
         if progman.is_null() {
-            return None;
+            return hosts;
         }
 
         // Progman이 WorkerW를 만들도록 유도합니다. 응답을 기다리지 않고
@@ -72,33 +83,44 @@ fn find_desktop_host() -> Option<HWND> {
         EnumWindows(Some(enum_proc), &mut search as *mut Search as LPARAM);
 
         if !search.found.is_null() {
-            Some(search.found)
-        } else {
-            // Windows 11 일부 빌드는 별도 WorkerW를 만들지 않고 SHELLDLL_DefView를
-            // Progman 아래 그대로 둡니다. 그럴 땐 Progman 자체가 붙을 대상입니다.
-            Some(progman)
+            hosts.push(search.found);
         }
+
+        // Windows 11 일부 빌드는 별도 WorkerW를 만들지 않고 SHELLDLL_DefView를
+        // Progman 아래 그대로 둡니다. 그럴 땐 Progman 자체가 붙을 대상입니다.
+        hosts.push(progman);
     }
+
+    hosts
 }
 
 pub fn attach(hwnd: isize) -> bool {
-    let Some(host) = find_desktop_host() else {
-        return false;
-    };
     let child = hwnd as HWND;
 
-    unsafe {
-        SetParent(child, host);
-        // SetParent는 '이전 부모'를 돌려줍니다. 최상위 창이었다면 이전 부모가
-        // NULL이라 반환값만으로는 성공과 실패를 구분할 수 없습니다.
-        //
-        // 확인에 GetParent를 쓰면 안 됩니다. GetParent는 WS_CHILD 스타일이 없는
-        // 창에 대해서는 부모가 아니라 '소유자'를 돌려주는데, SetParent는 창을
-        // 부모의 자식 목록에 넣을 뿐 WS_CHILD를 붙이지는 않습니다. 그래서 실제로
-        // 붙었는데도 GetParent는 계속 NULL을 반환합니다.
-        // 진짜 부모는 GA_PARENT로 물어봐야 합니다.
-        GetAncestor(child, GA_PARENT) == host
+    for host in desktop_hosts() {
+        unsafe {
+            SetParent(child, host);
+
+            // 확인에 GetParent를 쓰면 안 됩니다. GetParent는 WS_CHILD 스타일이
+            // 없는 창에 대해 부모가 아니라 '소유자'를 돌려주는데, SetParent는
+            // 자식 목록에만 넣고 WS_CHILD를 붙이지는 않습니다. 그래서 실제로
+            // 붙었는데도 GetParent는 계속 NULL입니다. GA_PARENT로 물어야 합니다.
+            //
+            // 부모가 맞다고 끝도 아닙니다. 숨겨진 창에 붙으면 우리도 같이
+            // 사라지므로, 붙인 뒤 실제로 보이는지까지 확인해야 합니다.
+            if GetAncestor(child, GA_PARENT) == host && IsWindowVisible(child) != 0 {
+                return true;
+            }
+        }
     }
+
+    // 어느 후보로도 실패했으면 원래대로 되돌립니다. 보이지 않는 창에
+    // 매달린 채로 두는 것보다 평범한 최상위 창으로 남는 편이 낫습니다.
+    unsafe {
+        SetParent(child, null_mut());
+        ShowWindow(child, SW_SHOWNOACTIVATE);
+    }
+    false
 }
 
 unsafe fn class_of(hwnd: HWND) -> String {
@@ -148,13 +170,26 @@ pub fn cursor_over(hwnd: isize) -> bool {
     }
 }
 
+/// 포커스를 빼앗지 않고 창을 다시 표시합니다.
+///
+/// "바탕화면 보기"(Win+D)가 켜진 상태에서 창을 떼어내면 평범한 최상위 창이
+/// 되는데, Windows는 그 모드에서 최상위 창을 숨깁니다. 그래서 떼어낸 직후
+/// 명시적으로 다시 띄워야 위젯이 사라지지 않습니다. SW_SHOW가 아니라
+/// SW_SHOWNOACTIVATE인 이유는, 마우스가 스쳤을 뿐인데 다른 앱에서 포커스를
+/// 빼앗아 오면 안 되기 때문입니다.
+pub fn show_without_activating(hwnd: isize) {
+    unsafe {
+        ShowWindow(hwnd as HWND, SW_SHOWNOACTIVATE);
+    }
+}
+
 pub fn detach(hwnd: isize) -> bool {
     let child = hwnd as HWND;
     unsafe {
         SetParent(child, null_mut());
-        // 떼어내면 부모가 바탕화면 창이 됩니다. 원래 붙어 있던 호스트만
+        // 떼어내면 부모가 바탕화면 창이 됩니다. 붙을 후보 중 어느 것도
         // 아니면 성공입니다.
         let parent = GetAncestor(child, GA_PARENT);
-        find_desktop_host().map_or(true, |host| parent != host)
+        !desktop_hosts().contains(&parent)
     }
 }

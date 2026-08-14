@@ -7,8 +7,23 @@ use std::time::{Duration, Instant};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
+    window::{Color, Effect, EffectState, EffectsBuilder},
     AppHandle, Manager, WebviewWindow, WindowEvent,
 };
+
+/// SetParent를 부를 때마다 DWM이 창에 걸어둔 합성 상태가 초기화됩니다.
+/// 그래서 자세를 바꿀 때마다 acrylic을 다시 걸어야 합니다. 이걸 빼먹으면
+/// 배경이 투명해지지 않고 창 기본 표면(흰색)이 그대로 남습니다.
+fn reapply_effects(window: &WebviewWindow) {
+    let _ = window.set_effects(
+        EffectsBuilder::new()
+            .effect(Effect::Acrylic)
+            .state(EffectState::Active)
+            .radius(16.0)
+            .color(Color(18, 19, 27, 190))
+            .build(),
+    );
+}
 
 /// 위젯이 지금 어떤 자세를 하고 있는지.
 ///
@@ -59,6 +74,14 @@ fn set_pinned_to_desktop(window: &WebviewWindow, pinned: bool) -> bool {
     if let Some(pos) = position {
         let _ = window.set_position(tauri::PhysicalPosition::new(pos.x, pos.y));
     }
+
+    if !pinned {
+        // "바탕화면 보기"가 켜져 있으면 떼어내는 순간 Windows가 숨겨버립니다.
+        desktop::show_without_activating(hwnd);
+    }
+
+    // SetParent가 DWM 합성 상태를 날려버리므로 매번 다시 걸어줍니다.
+    reapply_effects(window);
 
     ok
 }
