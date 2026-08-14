@@ -1,0 +1,63 @@
+{
+  "name": "Default",
+  "author": "reminder-widget",
+
+  "layout": {
+    "runwayHours": 24,
+    "columnHeight": 340,
+    "cardHeight": 40,
+    "queueGap": 46,
+    "runwayRatio": 0.46,
+    "floor": 8,
+    "maxQueueVisible": 8
+  },
+
+  "urgency": {
+    "horizonHours": 720,
+    "curve": 0.4,
+    "ramp": [
+      { "id": "urgent", "withinHours": 24, "color": "#C42B4A", "label": "긴급" },
+      { "id": "near", "withinHours": 72, "color": "#D9622F", "label": "임박" },
+      { "id": "soon", "withinHours": 336, "color": "#D69A2C", "label": "주의" },
+      { "id": "calm", "withinHours": null, "color": "#4A8C86", "label": "여유" }
+    ],
+    "overdue": { "color": "#8E1F3A", "label": "지남" }
+  },
+
+  "card": {
+    "radiusCalm": 10,
+    "radiusUrgent": 6,
+    "stripeCalm": 2,
+    "stripeUrgent": 4,
+    "fillAlphaCalm": 0.14,
+    "fillAlphaUrgent": 0.26,
+    "liftUrgent": 2
+  },
+
+  "motion": {
+    "enabled": true,
+    "breatheSeconds": 6,
+    "breatheOpacity": 0.06,
+    "spring": { "stiffness": 0.12, "damping": 0.62 },
+    "completeMs": 400
+  },
+
+  "night": {
+    "enabled": true,
+    "startHour": 23,
+    "endHour": 7,
+    "saturationScale": 0.62,
+    "motionScale": 0.0
+  },
+
+  "surface": {
+    "background": "rgba(255,255,255,0.055)",
+    "border": "rgba(255,255,255,0.11)",
+    "blur": 22,
+    "text": "#EDEDF5",
+    "textMuted": "rgba(255,255,255,0.45)",
+    "axis": "rgba(255,255,255,0.30)",
+    "boundary": "rgba(255,255,255,0.26)",
+    "deadline": "#C42B4A"
+  }
+}
