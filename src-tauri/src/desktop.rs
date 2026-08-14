@@ -19,10 +19,10 @@
 
 use std::ptr::{null, null_mut};
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GetAncestor, SendMessageTimeoutW, SetParent, GA_PARENT,
-    SMTO_NORMAL,
+    EnumWindows, FindWindowExW, FindWindowW, GetAncestor, GetClassNameW, GetCursorPos,
+    GetWindowRect, SendMessageTimeoutW, SetParent, WindowFromPoint, GA_PARENT, GA_ROOT, SMTO_NORMAL,
 };
 
 /// Progman에게 배경화면 뒤 WorkerW를 만들라고 시키는 문서화되지 않은 메시지.
@@ -98,6 +98,53 @@ pub fn attach(hwnd: isize) -> bool {
         // 붙었는데도 GetParent는 계속 NULL을 반환합니다.
         // 진짜 부모는 GA_PARENT로 물어봐야 합니다.
         GetAncestor(child, GA_PARENT) == host
+    }
+}
+
+unsafe fn class_of(hwnd: HWND) -> String {
+    let mut buf = [0u16; 128];
+    let n = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+    if n <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buf[..n as usize])
+}
+
+/// 바탕화면을 이루는 창인지 — 즉 그 위에 놓인 우리 위젯이 '노출되어 있는' 상태인지.
+unsafe fn is_desktop_surface(hwnd: HWND) -> bool {
+    let class = unsafe { class_of(hwnd) };
+    class == "Progman" || class == "WorkerW"
+}
+
+/// 커서가 위젯 위에 있고, 그 지점을 다른 앱 창이 덮고 있지 않은지.
+///
+/// 부착 상태에서는 창이 마우스 메시지를 아예 못 받기 때문에(포커스 활성화
+/// 체인 밖에 있으므로) 커서 위치를 직접 읽는 수밖에 없습니다. 전역 후킹 대신
+/// 폴링을 쓰는 이유는, 후킹이 보안 소프트웨어에 오탐되기 쉽고 이 용도에는
+/// 과하기 때문입니다.
+pub fn cursor_over(hwnd: isize) -> bool {
+    let target = hwnd as HWND;
+    unsafe {
+        let mut pt = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut pt) == 0 {
+            return false;
+        }
+
+        let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetWindowRect(target, &mut rect) == 0 {
+            return false;
+        }
+        if pt.x < rect.left || pt.x >= rect.right || pt.y < rect.top || pt.y >= rect.bottom {
+            return false;
+        }
+
+        // 위젯 사각형 안이라도 다른 창이 그 위를 덮고 있으면 우리 차례가 아닙니다.
+        let under = WindowFromPoint(pt);
+        if under.is_null() {
+            return false;
+        }
+        let root = GetAncestor(under, GA_ROOT);
+        root == target || is_desktop_surface(root)
     }
 }
 
