@@ -119,6 +119,7 @@
     position: absolute;
     left: 0;
     right: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -143,6 +144,43 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /**
+   * 레인이 좁아지면 제목이 잘립니다. 호버하면 카드가 제자리에서 떠올라
+   * 필요한 만큼만 펼쳐집니다.
+   *
+   * 레이아웃을 밀어내는 방식이 아니라 위를 덮는 방식인 게 중요합니다. 카드
+   * 하나 읽으려는데 옆 레인들이 다 움직이면 시선이 흔들려 오히려 산만합니다.
+   * 여기서는 아무것도 밀리지 않습니다.
+   */
+  /* 카드 채움은 반투명이라 그대로 펼치면 아래 카드가 비쳐 겹쳐 보입니다.
+     채움 뒤에 불투명 판을 깔아 확장된 동안만 가려 줍니다. */
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--surface-solid, rgba(18, 19, 27, 0.97));
+    opacity: 0;
+  }
+
+  .card:hover::before {
+    opacity: 1;
+  }
+
+  .card:hover {
+    right: auto;
+    width: max-content;
+    min-width: 100%;
+    max-width: 300px;
+    z-index: 30;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .card:hover .title {
+    overflow: visible;
+    text-overflow: clip;
   }
 
 

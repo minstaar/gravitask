@@ -14,6 +14,8 @@
     "floor": 6,
     "maxQueueVisible": 8,
     "laneWidth": 158,
+    "laneMin": 92,
+    "maxWidth": 660,
     "laneGap": 10,
     "gutter": 44
   },

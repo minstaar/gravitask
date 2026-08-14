@@ -20,8 +20,22 @@
 
   const axis = $derived(computeAxis(tasks, categories, now, { reducedMotion }));
   const L = theme.layout;
+
+  /**
+   * 레인 폭은 범주가 늘면 줄어듭니다.
+   *
+   * 선호 폭을 고정해두면 범주 수에 폭이 선형으로 붙어 학기 중 6과목이면
+   * 화면 절반을 먹습니다. 상한을 두고 그 안에서 나눠 쓰되, 제목이 거의 남지
+   * 않는 하한 아래로는 줄이지 않습니다. 좁아진 제목은 호버로 펼쳐 봅니다.
+   */
+  const laneW = $derived.by(() => {
+    const n = Math.max(1, categories.length);
+    const available = L.maxWidth - L.gutter - (n - 1) * L.laneGap;
+    return Math.max(L.laneMin, Math.min(L.laneWidth, Math.floor(available / n)));
+  });
+
   const width = $derived(
-    L.gutter + categories.length * L.laneWidth + Math.max(0, categories.length - 1) * L.laneGap
+    L.gutter + categories.length * laneW + Math.max(0, categories.length - 1) * L.laneGap
   );
 </script>
 
@@ -46,7 +60,7 @@
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-axis="{theme.type.axis}px"
   style:--gutter="{L.gutter}px"
-  style:--lane-w="{L.laneWidth}px"
+  style:--lane-w="{laneW}px"
   style:--lane-gap="{L.laneGap}px"
   style:--content-w="{width}px"
 >
