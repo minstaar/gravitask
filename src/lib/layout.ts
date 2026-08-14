@@ -57,6 +57,36 @@ interface Prepared {
   zone: Zone;
 }
 
+/**
+ * 겹치는 카드를 최소 간격만큼 벌립니다.
+ *
+ * ys는 아래에서 위로 정렬돼 있어야 합니다(마감이 이른 순). 아래에서부터 위로
+ * 밀어 올린 뒤, 천장을 넘으면 위에서 아래로 되밀어 구역 안에 가둡니다.
+ * 시간 위치를 그대로 두면 정확하지만 읽을 수 없고, 균등 간격으로 바꾸면
+ * 읽히지만 시간 정보를 잃습니다. 겹치는 만큼만 건드리는 것이 절충입니다.
+ */
+function spreadApart(ys: number[], gap: number, lo: number, hi: number): number[] {
+  const out = ys.slice();
+
+  for (let i = 1; i < out.length; i++) {
+    out[i] = Math.max(out[i], out[i - 1] + gap);
+  }
+
+  // 위로 밀다 천장을 넘었으면 전체를 아래로 되밉니다.
+  if (out.length > 0 && out[out.length - 1] > hi) {
+    for (let i = out.length - 1; i >= 0; i--) {
+      const ceiling = i === out.length - 1 ? hi : out[i + 1] - gap;
+      out[i] = Math.min(out[i], ceiling);
+    }
+    // 되밀다 바닥을 뚫으면 어쩔 수 없이 균등 간격으로 눌러 담습니다.
+    for (let i = 0; i < out.length; i++) {
+      out[i] = Math.max(out[i], lo + i * Math.min(gap, (hi - lo) / Math.max(1, out.length - 1)));
+    }
+  }
+
+  return out;
+}
+
 export function computeAxis(
   tasks: Task[],
   categories: Category[],
@@ -95,14 +125,30 @@ export function computeAxis(
   );
 
   const overdueHeight = maxOverdue > 0 ? maxOverdue * L.overdueGap + L.floor : 0;
-  const runwayHeight = anyRunway ? L.runwayHeight : L.runwayCollapsed;
+
+  /**
+   * 활주로는 붐비면 늘어납니다.
+   *
+   * 활주로 안에서 카드는 실제 시간 위치에 놓이므로, 비슷한 시각에 마감이
+   * 몰리면 서로 겹칩니다. 고정 높이를 유지한 채 밀어내면 시간 위치가 크게
+   * 왜곡되므로, 먼저 구역을 키워 자리를 만들고 남은 겹침만 밀어냅니다.
+   */
+  const maxRunway = Math.max(0, ...splits.map((s) => s.runway.length));
+  const spacing = L.cardHeight + L.minCardGap;
+  const neededRunway =
+    maxRunway > 0 ? (maxRunway - 1) * spacing + L.cardHeight + L.floor * 2 : 0;
+  const runwayHeight = anyRunway
+    ? Math.max(L.runwayHeight, neededRunway)
+    : L.runwayCollapsed;
 
   const deadlineY = overdueHeight;
   const boundaryY = deadlineY + runwayHeight;
   const queueHeight = Math.max(L.minQueueHeight, maxQueue * L.queueGap + 10);
   const height = boundaryY + queueHeight;
 
-  const runwayTravel = runwayHeight - L.cardHeight - 10;
+  const runwayFloor = deadlineY + L.floor;
+  const runwayTravel = runwayHeight - L.cardHeight - L.floor * 2;
+  const runwayCeil = runwayFloor + runwayTravel;
 
   const lanes: Lane[] = categories.map((category, ci) => {
     const s = splits[ci];
@@ -121,13 +167,19 @@ export function computeAxis(
     });
 
     // 활주로 — 실제 시간 눈금. 레인이 달라도 같은 높이는 같은 시간입니다.
-    s.runway.forEach((x) => {
+    // 이상적인 위치를 먼저 구하고, 겹치는 만큼만 밀어냅니다.
+    const ideal = s.runway.map((x) => {
       const frac = Math.max(0, Math.min(1, x.h / L.runwayHours));
+      return runwayFloor + frac * runwayTravel;
+    });
+    const resolved = spreadApart(ideal, spacing, runwayFloor, runwayCeil);
+
+    s.runway.forEach((x, i) => {
       placed.push({
         task: x.task,
         visual: x.visual,
         zone: x.zone,
-        y: deadlineY + L.floor + frac * runwayTravel,
+        y: resolved[i],
         remaining: formatRemaining(x.task.due, now, x.zone),
       });
     });

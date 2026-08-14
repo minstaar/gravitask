@@ -11,6 +11,7 @@
     "queueGap": 52,
     "overdueGap": 50,
     "minQueueHeight": 80,
+    "minCardGap": 5,
     "floor": 6,
     "maxQueueVisible": 8,
     "laneWidth": 158,

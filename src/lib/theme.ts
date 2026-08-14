@@ -24,6 +24,8 @@ export interface Theme {
     queueGap: number;
     overdueGap: number;
     minQueueHeight: number;
+    /** 활주로에서 카드끼리 최소로 벌어져야 하는 간격 */
+    minCardGap: number;
     floor: number;
     maxQueueVisible: number;
     /** 레인 하나의 선호 폭. 범주가 적을 때 쓰는 값입니다 */
