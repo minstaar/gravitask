@@ -15,9 +15,7 @@
         "title": "Gravitask",
         "width": 620,
         "height": 520,
-        "minWidth": 320,
-        "minHeight": 300,
-        "resizable": true,
+        "resizable": false,
         "fullscreen": false,
 
         "transparent": true,

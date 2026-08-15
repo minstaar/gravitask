@@ -125,19 +125,53 @@ async fn look_for_update(app: &AppHandle, item: &MenuItem<tauri::Wry>) {
 }
 
 /// 확인해서 있으면 받아 설치하고 다시 시작합니다.
-async fn install_update(app: AppHandle) {
-    let Ok(updater) = app.updater() else { return };
-    match updater.check().await {
+///
+/// 결과를 반드시 메뉴 항목에 되돌려 씁니다. 눌렀는데 아무 표시도 없으면
+/// 사용자는 고장과 구분할 수 없습니다. 최신이라는 답도 답입니다.
+async fn install_update(app: AppHandle, item: MenuItem<tauri::Wry>) {
+    let _ = item.set_text("확인 중…");
+    let _ = item.set_enabled(false);
+
+    let outcome = match app.updater() {
+        Ok(updater) => updater.check().await,
+        Err(err) => Err(err),
+    };
+
+    match outcome {
         Ok(Some(update)) => {
-            log::info!("v{} 내려받는 중", update.version);
+            let _ = item.set_text(format!("v{} 내려받는 중…", update.version));
             match update.download_and_install(|_, _| {}, || {}).await {
-                Ok(_) => app.restart(),
-                Err(err) => log::error!("업데이트 설치 실패: {err}"),
+                Ok(_) => {
+                    app.restart();
+                }
+                Err(err) => {
+                    log::error!("업데이트 설치 실패: {err}");
+                    let _ = item.set_text("설치 실패 — 다시 시도");
+                }
             }
         }
-        Ok(None) => log::info!("최신 버전입니다"),
-        Err(err) => log::warn!("업데이트 확인 실패: {err}"),
+        Ok(None) => {
+            let _ = item.set_text("최신 버전입니다");
+            // 잠시 뒤 원래 이름으로 돌립니다. 그대로 두면 다음에 눌러야 할
+            // 버튼인지 알 수 없습니다.
+            let revert = item.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(4));
+                let _ = revert.set_text("업데이트 확인");
+            });
+        }
+        Err(err) => {
+            log::warn!("업데이트 확인 실패: {err}");
+            let _ = item.set_text("확인 실패 — 연결 상태를 보세요");
+            let revert = item.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(4));
+                let _ = revert.set_text("업데이트 확인");
+            });
+        }
     }
+
+    let _ = item.set_enabled(true);
 }
 
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
@@ -159,6 +193,7 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &update, &quit])?;
     let pin_ref = pin.clone();
     let boot_ref = boot.clone();
+    let update_ref = update.clone();
 
     // 시작 직후 한 번, 이후 주기적으로 확인합니다.
     let handle = app.handle().clone();
@@ -211,7 +246,8 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                 }
                 "update" => {
                     let handle = app.clone();
-                    tauri::async_runtime::spawn(async move { install_update(handle).await });
+                    let item = update_ref.clone();
+                    tauri::async_runtime::spawn(async move { install_update(handle, item).await });
                 }
                 "quit" => app.exit(0),
                 _ => {}

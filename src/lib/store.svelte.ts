@@ -48,6 +48,18 @@ export async function addTask(input: NewTask): Promise<void> {
   await refresh();
 }
 
+/**
+ * 완료를 되돌립니다.
+ *
+ * 완료는 삭제가 아니라 completedAt 표시라 복구가 간단합니다. 체크하면 카드가
+ * 즉시 사라지는데 그 즉시성이 완료를 보상으로 만듭니다. 확인 절차를 넣으면
+ * 그 감각이 죽으므로, 대신 되돌릴 기회를 잠깐 남겨둡니다.
+ */
+export async function restoreTask(id: string): Promise<void> {
+  await source.update?.(id, { completedAt: null });
+  await refresh();
+}
+
 export async function toggleTask(task: Task): Promise<void> {
   await source.update?.(task.id, { completedAt: task.completedAt ? null : Date.now() });
   await refresh();

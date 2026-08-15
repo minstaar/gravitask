@@ -10,6 +10,7 @@
     removeCategory,
     renameCategory,
     markSeeded,
+    restoreTask,
     startClock,
     store,
     toggleTask,
@@ -35,6 +36,29 @@
 
   /** 편집 모드. 평소에는 위젯을 깔끔하게 두고, 손댈 때만 조작부를 드러냅니다 */
   let editing = $state(false);
+
+  /** 방금 완료한 항목. 잘못 눌렀을 때 되돌릴 기회를 잠깐 남깁니다 */
+  let undoable = $state<{ id: string; title: string } | null>(null);
+  let undoTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const UNDO_WINDOW = 7000;
+
+  function completeTask(task: (typeof store.tasks)[number]) {
+    const wasOpen = task.completedAt === null;
+    void toggleTask(task);
+    if (!wasOpen) return;
+
+    undoable = { id: task.id, title: task.title };
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => (undoable = null), UNDO_WINDOW);
+  }
+
+  function undoComplete() {
+    if (!undoable) return;
+    void restoreTask(undoable.id);
+    clearTimeout(undoTimer);
+    undoable = null;
+  }
 
   $effect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -66,6 +90,11 @@
       if (e.key === 'n' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         quickAdd?.focus();
+      }
+      // 되돌리기는 Ctrl+Z여야 합니다. 다른 곳에서 몸에 밴 동작입니다.
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && undoable) {
+        e.preventDefault();
+        undoComplete();
       }
     };
     window.addEventListener('keydown', on);
@@ -101,16 +130,20 @@
     );
   }
 
+  /**
+   * 패널 크기를 직접 관찰합니다.
+   *
+   * 어떤 상태가 바뀌면 창을 다시 맞출지 일일이 나열하면 반드시 빠뜨립니다.
+   * 실제로 주제 편집을 열 때 높이가 변하는데도 창이 따라오지 않았습니다.
+   * 크기 변화 자체를 신호로 삼으면 원인이 무엇이든 놓치지 않습니다.
+   */
   $effect(() => {
-    // 내용이 바뀌면 창 크기도 따라갑니다.
-    void store.tasks;
-    void store.categories;
-    void store.now;
-    if (!inTauri) return;
-    // 타이머로 미루면 그 사이 내용이 창보다 커져 스크롤바가 번쩍입니다.
-    // 다음 프레임에 바로 맞춥니다.
-    const id = requestAnimationFrame(() => void fitWindow());
-    return () => cancelAnimationFrame(id);
+    if (!inTauri || !panel) return;
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(() => void fitWindow());
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
   });
 
   async function seedIfEmpty() {
@@ -189,8 +222,15 @@
       categories={sorted}
       now={store.now}
       {reducedMotion}
-      onToggle={toggleTask}
+      onToggle={completeTask}
     />
+
+    {#if undoable}
+      <div class="undo">
+        <span class="done-title">완료 · {undoable.title}</span>
+        <button onclick={undoComplete}>되돌리기</button>
+      </div>
+    {/if}
 
   </div>
 </main>
@@ -278,6 +318,43 @@
     background: rgba(90, 80, 190, 0.28);
   }
 
+
+  .undo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 11px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .done-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .undo button {
+    flex: none;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: #cfcbff;
+    background: rgba(90, 80, 190, 0.32);
+    border: 1px solid rgba(160, 150, 255, 0.45);
+    border-radius: 7px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+
+  .undo button:hover {
+    background: rgba(90, 80, 190, 0.5);
+  }
 
   .dragbar {
     display: flex;
