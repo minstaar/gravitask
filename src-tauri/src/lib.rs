@@ -11,6 +11,11 @@ use tauri::{
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_updater::UpdaterExt;
+
+/// 시작 직후 한 번, 그 뒤로는 이 간격마다 새 버전을 확인합니다.
+/// 위젯은 며칠씩 켜져 있으므로 시작 시 한 번만으로는 부족합니다.
+const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// 어디서든 할 일을 적을 수 있게 하는 전역 단축키.
 /// 위젯을 클릭하러 가야 한다면 "나중에 적어야지"로 새는 항목이 생깁니다.
@@ -86,6 +91,55 @@ fn spawn_desktop_parker(app: &AppHandle, state: Arc<WidgetState>) {
 #[cfg(not(windows))]
 fn spawn_desktop_parker(_app: &AppHandle, _state: Arc<WidgetState>) {}
 
+/// 새 버전이 있으면 트레이 메뉴에 알립니다.
+///
+/// 찾자마자 받아서 설치하지는 않습니다. 설치는 앱 재시작을 뜻하는데, 할 일을
+/// 적는 중에 창이 사라지면 그건 데이터를 잃는 것과 같습니다. 언제 설치할지는
+/// 사용자가 정합니다.
+async fn look_for_update(app: &AppHandle, item: &MenuItem<tauri::Wry>) {
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(err) => {
+            log::warn!("업데이터를 쓸 수 없습니다: {err}");
+            return;
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let _ = item.set_text(format!("업데이트 설치 (v{})", update.version));
+            if let Some(tray) = app.tray_by_id("main-tray") {
+                let _ = tray.set_tooltip(Some(format!("Gravitask — v{} 사용 가능", update.version)));
+            }
+            log::info!("새 버전 v{} 발견", update.version);
+        }
+        Ok(None) => {
+            let _ = item.set_text("업데이트 확인");
+        }
+        Err(err) => {
+            // 네트워크가 끊겨 있거나 릴리스가 아직 없으면 여기로 옵니다.
+            // 위젯 본연의 기능과 무관하므로 조용히 넘어갑니다.
+            log::info!("업데이트 확인 실패(무시): {err}");
+        }
+    }
+}
+
+/// 확인해서 있으면 받아 설치하고 다시 시작합니다.
+async fn install_update(app: AppHandle) {
+    let Ok(updater) = app.updater() else { return };
+    match updater.check().await {
+        Ok(Some(update)) => {
+            log::info!("v{} 내려받는 중", update.version);
+            match update.download_and_install(|_, _| {}, || {}).await {
+                Ok(_) => app.restart(),
+                Err(err) => log::error!("업데이트 설치 실패: {err}"),
+            }
+        }
+        Ok(None) => log::info!("최신 버전입니다"),
+        Err(err) => log::warn!("업데이트 확인 실패: {err}"),
+    }
+}
+
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
 /// 없으면 사용자 입장에서는 앱이 사라진 것과 구분되지 않습니다.
 fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
@@ -100,9 +154,21 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let launch_on = autostart.is_enabled().unwrap_or(false);
     let boot = CheckMenuItem::with_id(app, "boot", "로그인 시 자동 시작", true, launch_on, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &quit])?;
+    let update = MenuItem::with_id(app, "update", "업데이트 확인", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &update, &quit])?;
     let pin_ref = pin.clone();
     let boot_ref = boot.clone();
+
+    // 시작 직후 한 번, 이후 주기적으로 확인합니다.
+    let handle = app.handle().clone();
+    let watched = update.clone();
+    std::thread::spawn(move || loop {
+        let app = handle.clone();
+        let item = watched.clone();
+        tauri::async_runtime::spawn(async move { look_for_update(&app, &item).await });
+        std::thread::sleep(UPDATE_INTERVAL);
+    });
 
     TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -142,6 +208,10 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                         log::warn!("자동 시작 설정 실패: {err}");
                         let _ = boot_ref.set_checked(!on);
                     }
+                }
+                "update" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move { install_update(handle).await });
                 }
                 "quit" => app.exit(0),
                 _ => {}
