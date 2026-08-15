@@ -1,10 +1,12 @@
+import { readJson, writeJson } from '../persist';
 import type { NewTask, Task, TaskSource } from '../types';
 
 /**
- * v1의 유일한 소스 — 브라우저 localStorage.
+ * v1의 유일한 소스 — 로컬 저장.
  *
- * Tauri 껍데기를 씌울 때 이 클래스만 파일 기반(SQLite 또는 JSON)으로 갈아끼우면
- * 됩니다. TaskSource 인터페이스 뒤에 있으므로 UI는 건드릴 일이 없습니다.
+ * 실제 저장 위치는 persist.ts가 정합니다. 설치된 앱에서는 앱 데이터 폴더의
+ * JSON 파일, 브라우저 개발 중에는 localStorage입니다. 이 클래스는 어느 쪽인지
+ * 알 필요가 없습니다.
  */
 
 const KEY = 'reminder-widget:tasks:v1';
@@ -22,27 +24,19 @@ export class LocalSource implements TaskSource {
   #listeners = new Set<() => void>();
   #cache: Task[] | null = null;
 
-  #read(): Task[] {
-    if (this.#cache) return this.#cache;
-    try {
-      const raw = localStorage.getItem(KEY);
-      this.#cache = raw ? (JSON.parse(raw) as Task[]) : [];
-    } catch {
-      // 저장된 데이터가 깨졌다면 빈 목록으로 시작합니다.
-      // 사용자 데이터를 조용히 덮어쓰지 않도록 여기서 지우지는 않습니다.
-      this.#cache = [];
-    }
+  async #read(): Promise<Task[]> {
+    this.#cache ??= (await readJson<Task[]>(KEY)) ?? [];
     return this.#cache;
   }
 
-  #write(tasks: Task[]): void {
+  async #write(tasks: Task[]): Promise<void> {
     this.#cache = tasks;
-    localStorage.setItem(KEY, JSON.stringify(tasks));
+    await writeJson(KEY, tasks);
     this.#listeners.forEach((fn) => fn());
   }
 
   async list(): Promise<Task[]> {
-    return [...this.#read()];
+    return [...(await this.#read())];
   }
 
   subscribe(onChange: () => void): () => void {
@@ -52,15 +46,17 @@ export class LocalSource implements TaskSource {
 
   async add(input: NewTask): Promise<Task> {
     const task: Task = { ...input, id: uid(), createdAt: Date.now(), completedAt: null };
-    this.#write([...this.#read(), task]);
+    await this.#write([...(await this.#read()), task]);
     return task;
   }
 
   async update(id: string, patch: Partial<Omit<Task, 'id'>>): Promise<void> {
-    this.#write(this.#read().map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const tasks = await this.#read();
+    await this.#write(tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
   async remove(id: string): Promise<void> {
-    this.#write(this.#read().filter((t) => t.id !== id));
+    const tasks = await this.#read();
+    await this.#write(tasks.filter((t) => t.id !== id));
   }
 }

@@ -9,9 +9,11 @@
     refresh,
     removeCategory,
     renameCategory,
+    markSeeded,
     startClock,
     store,
     toggleTask,
+    wasSeeded,
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
   import { theme } from './lib/theme';
@@ -113,8 +115,8 @@
 
   async function seedIfEmpty() {
     if (store.tasks.length > 0) return;
-    if (localStorage.getItem('reminder-widget:seeded')) return;
-    localStorage.setItem('reminder-widget:seeded', '1');
+    if (await wasSeeded()) return;
+    await markSeeded();
 
     const now = Date.now();
     const demo: NewTask[] = [

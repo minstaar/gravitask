@@ -1,34 +1,46 @@
-﻿import { LocalSource } from './sources/LocalSource';
+﻿import { migrateFromLocalStorage, readJson, writeJson } from './persist';
+import { LocalSource } from './sources/LocalSource';
 import type { Category, NewTask, Task, TaskSource } from './types';
 
 const CAT_KEY = 'reminder-widget:categories:v1';
+const TASK_KEY = 'reminder-widget:tasks:v1';
+const SEED_KEY = 'reminder-widget:seeded';
 
 const SEED: Category[] = [
   { id: 'study', name: '학업', order: 0 },
   { id: 'life', name: '생활', order: 1 },
 ];
 
-function loadCategories(): Category[] {
-  try {
-    const raw = localStorage.getItem(CAT_KEY);
-    if (raw) return JSON.parse(raw) as Category[];
-  } catch {
-    /* 깨진 데이터면 기본값으로 */
-  }
-  return SEED;
-}
-
 export const source: TaskSource = new LocalSource();
 
 export const store = $state({
   tasks: [] as Task[],
-  categories: loadCategories(),
+  categories: SEED,
   /** 렌더링 기준 시각 */
   now: Date.now(),
 });
 
+/**
+ * 저장된 것을 읽어옵니다.
+ *
+ * 먼저 이전 버전이 localStorage에 남긴 데이터를 파일로 옮깁니다. 업데이트로
+ * 저장 위치가 바뀌는 건 사용자 사정이 아니므로, 쓰던 할 일과 주제가 그대로
+ * 따라와야 합니다.
+ */
 export async function refresh(): Promise<void> {
+  await migrateFromLocalStorage([TASK_KEY, CAT_KEY, SEED_KEY]);
+  const saved = await readJson<Category[]>(CAT_KEY);
+  if (saved && saved.length > 0) store.categories = saved;
   store.tasks = await source.list();
+}
+
+/** 예시 항목을 한 번만 넣기 위한 표시 */
+export async function wasSeeded(): Promise<boolean> {
+  return (await readJson<boolean>(SEED_KEY)) === true;
+}
+
+export async function markSeeded(): Promise<void> {
+  await writeJson(SEED_KEY, true);
 }
 
 export async function addTask(input: NewTask): Promise<void> {
@@ -48,7 +60,9 @@ export async function removeTask(id: string): Promise<void> {
 
 export function saveCategories(next: Category[]): void {
   store.categories = next;
-  localStorage.setItem(CAT_KEY, JSON.stringify(next));
+  // 화면은 즉시 바뀌고 저장은 뒤따릅니다. 이름을 한 글자 칠 때마다
+  // 디스크 쓰기를 기다리게 하면 입력이 끊깁니다.
+  void writeJson(CAT_KEY, next);
 }
 
 export function addCategory(name = '새 주제'): string {
