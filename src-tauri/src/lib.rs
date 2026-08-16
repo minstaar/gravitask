@@ -21,6 +21,12 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 위젯을 클릭하러 가야 한다면 "나중에 적어야지"로 새는 항목이 생깁니다.
 const QUICK_ADD: &str = "Ctrl+Alt+G";
 
+/// 트레이의 '로그인 시 자동 시작' 체크 항목.
+///
+/// 설정 화면에도 같은 스위치가 있어서, 한쪽에서 바꾸면 다른 쪽 표시도 따라가야
+/// 합니다. 켜져 있다고 표시된 채 실제로는 꺼져 있는 것이 가장 나쁜 결과입니다.
+struct BootItem(CheckMenuItem<tauri::Wry>);
+
 struct WidgetState {
     /// 창이 포커스를 쥐고 있는지. 조작 중에는 아래로 내리지 않습니다.
     focused: AtomicBool,
@@ -146,54 +152,103 @@ async fn look_for_update(app: &AppHandle, item: &MenuItem<tauri::Wry>) {
     }
 }
 
-/// 확인해서 있으면 받아 설치하고 다시 시작합니다.
+/// 트레이에서 누른 경우. 설치 자체는 커맨드가 하고 여기서는 상태만 적습니다.
 ///
 /// 결과를 반드시 메뉴 항목에 되돌려 씁니다. 눌렀는데 아무 표시도 없으면
 /// 사용자는 고장과 구분할 수 없습니다. 최신이라는 답도 답입니다.
-async fn install_update(app: AppHandle, item: MenuItem<tauri::Wry>) {
+async fn tray_install(app: AppHandle, item: MenuItem<tauri::Wry>) {
     let _ = item.set_text("확인 중…");
     let _ = item.set_enabled(false);
 
-    let outcome = match app.updater() {
-        Ok(updater) => updater.check().await,
-        Err(err) => Err(err),
-    };
-
-    match outcome {
-        Ok(Some(update)) => {
-            let _ = item.set_text(format!("v{} 내려받는 중…", update.version));
-            match update.download_and_install(|_, _| {}, || {}).await {
-                Ok(_) => {
-                    app.restart();
-                }
-                Err(err) => {
-                    log::error!("업데이트 설치 실패: {err}");
-                    let _ = item.set_text("설치 실패 — 다시 시도");
-                }
-            }
-        }
-        Ok(None) => {
-            let _ = item.set_text("최신 버전입니다");
-            // 잠시 뒤 원래 이름으로 돌립니다. 그대로 두면 다음에 눌러야 할
-            // 버튼인지 알 수 없습니다.
-            let revert = item.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(4));
-                let _ = revert.set_text("업데이트 확인");
-            });
+    let outcome = install_update(app).await;
+    let message = match outcome {
+        // 성공하면 앱이 재시작하므로 여기까지 오지 않습니다.
+        Ok(()) => "설치 완료".to_string(),
+        Err(err) if err.contains("최신") => {
+            log::info!("업데이트 없음");
+            "최신 버전입니다".to_string()
         }
         Err(err) => {
-            log::warn!("업데이트 확인 실패: {err}");
-            let _ = item.set_text("확인 실패 — 연결 상태를 보세요");
-            let revert = item.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(4));
-                let _ = revert.set_text("업데이트 확인");
-            });
+            log::warn!("업데이트 실패: {err}");
+            "실패 — 다시 시도".to_string()
         }
-    }
+    };
 
+    let _ = item.set_text(&message);
     let _ = item.set_enabled(true);
+
+    // 잠시 뒤 원래 이름으로 돌립니다. 그대로 두면 다음에 눌러야 할 버튼인지
+    // 알 수 없습니다.
+    let revert = item.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        let _ = revert.set_text("업데이트 확인");
+    });
+}
+
+/// 새 버전이 있으면 버전 문자열을, 없으면 None을 돌려줍니다.
+///
+/// 설정 화면이 트레이와 같은 코드를 씁니다. 확인과 설치가 두 벌이 되면 어느
+/// 쪽이 무엇을 봤는지 어긋나는 순간 원인을 찾을 수 없게 됩니다.
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<String>, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(update.version)),
+        Ok(None) => Ok(None),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+/// 받아서 설치하고 다시 시작합니다.
+///
+/// 진행률을 이벤트로 흘려보냅니다. 수십 MB를 받는 동안 화면이 멈춰 있으면
+/// 사용자는 고장과 구분할 수 없습니다.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "이미 최신 버전입니다".to_string())?;
+
+    let mut got: u64 = 0;
+    let progress = app.clone();
+    let done = app.clone();
+
+    update
+        .download_and_install(
+            move |chunk, total| {
+                got += chunk as u64;
+                let pct = total.map(|t| (got as f64 / t as f64 * 100.0).round() as u32);
+                let _ = progress.emit("gravitask://update-progress", pct);
+            },
+            move || {
+                let _ = done.emit("gravitask://update-progress", 100u32);
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    app.restart();
+}
+
+#[tauri::command]
+fn autostart_enabled(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// 켜고 끄면서 트레이 체크 표시도 함께 맞춥니다.
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    let result = if enabled { launcher.enable() } else { launcher.disable() };
+    result.map_err(|e| e.to_string())?;
+    if let Some(item) = app.try_state::<BootItem>() {
+        let _ = item.0.set_checked(enabled);
+    }
+    Ok(())
 }
 
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
@@ -211,6 +266,8 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let boot = CheckMenuItem::with_id(app, "boot", "로그인 시 자동 시작", true, launch_on, None::<&str>)?;
 
     let update = MenuItem::with_id(app, "update", "업데이트 확인", true, None::<&str>)?;
+
+    app.manage(BootItem(boot.clone()));
 
     let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &update, &quit])?;
     let pin_ref = pin.clone();
@@ -269,7 +326,7 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                 "update" => {
                     let handle = app.clone();
                     let item = update_ref.clone();
-                    tauri::async_runtime::spawn(async move { install_update(handle, item).await });
+                    tauri::async_runtime::spawn(async move { tray_install(handle, item).await });
                 }
                 "quit" => app.exit(0),
                 _ => {}
@@ -318,6 +375,12 @@ pub fn run() {
                 })
                 .build(),
         )
+        .invoke_handler(tauri::generate_handler![
+            check_update,
+            install_update,
+            autostart_enabled,
+            set_autostart
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

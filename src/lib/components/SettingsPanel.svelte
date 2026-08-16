@@ -1,5 +1,12 @@
 ﻿<script lang="ts">
   import { theme } from '../theme';
+  import {
+    checkUpdate,
+    installUpdate,
+    isAutostartOn,
+    onUpdateProgress,
+    setAutostart,
+  } from '../system';
   import type { Settings } from '../settings';
   import type { Category, Task } from '../types';
 
@@ -76,6 +83,76 @@
     observer.observe(el);
     return () => observer.disconnect();
   });
+
+  /* ---------- 시작 · 업데이트 ---------- */
+
+  let autostart = $state(false);
+
+  $effect(() => {
+    void isAutostartOn().then((on) => (autostart = on));
+  });
+
+  async function toggleAutostart() {
+    const next = !autostart;
+    autostart = next; // 먼저 반응하고
+    try {
+      await setAutostart(next);
+    } catch (err) {
+      // 실패하면 되돌립니다. 켜졌다고 표시해놓고 실제로는 안 켜지는 게
+      // 가장 나쁜 결과입니다.
+      autostart = !next;
+      console.warn('자동 시작 설정 실패', err);
+    }
+  }
+
+  let newVersion = $state<string | null>(null);
+  let updateBusy = $state(false);
+  let updateNote = $state('');
+  let progress = $state<number | null>(null);
+
+  const updateText = $derived.by(() => {
+    if (updateNote) return updateNote;
+    if (progress !== null) return `내려받는 중… ${progress}%`;
+    if (updateBusy) return '확인 중…';
+    if (newVersion) return `새 버전 v${newVersion}`;
+    return '업데이트';
+  });
+
+  $effect(() => {
+    let stop: (() => void) | undefined;
+    void onUpdateProgress((pct) => (progress = pct)).then((fn) => (stop = fn));
+    return () => stop?.();
+  });
+
+  /**
+   * 눌렀는데 아무 표시도 없으면 사용자는 고장과 구분할 수 없습니다.
+   * '최신입니다'도 답이므로 반드시 적고, 잠시 뒤 원래 이름으로 돌립니다 —
+   * 그대로 두면 다음에 눌러야 할 버튼인지 알 수 없습니다.
+   */
+  function note(text: string) {
+    updateNote = text;
+    setTimeout(() => (updateNote = ''), 4000);
+  }
+
+  async function onUpdateClick() {
+    if (updateBusy) return;
+    updateBusy = true;
+    updateNote = '';
+    try {
+      if (newVersion) {
+        await installUpdate(); // 성공하면 앱이 재시작하므로 여기로 돌아오지 않습니다
+      } else {
+        const found = await checkUpdate();
+        newVersion = found;
+        if (!found) note('최신 버전입니다');
+      }
+    } catch (err) {
+      note(String(err).includes('최신') ? '최신 버전입니다' : '실패 — 다시 시도');
+    } finally {
+      updateBusy = false;
+      progress = null;
+    }
+  }
 
   /** 4px은 움직여야 끄는 것으로 봅니다. 누르는 손이 흔들렸다고 화면이 밀리면 안 됩니다 */
   const DRAG_THRESHOLD = 4;
@@ -263,6 +340,33 @@
           </div>
         {/each}
       {/if}
+
+      <h2 class="section">시작 · 업데이트</h2>
+
+      <div class="row">
+        <span class="label">로그인 시 자동 시작</span>
+        <button
+          class="toggle"
+          class:on={autostart}
+          role="switch"
+          aria-checked={autostart}
+          aria-label="로그인 시 자동 시작"
+          onclick={toggleAutostart}
+        >
+          <span class="knob"></span>
+        </button>
+      </div>
+
+      <!--
+        눌렀는데 아무 표시도 없으면 사용자는 고장과 구분할 수 없습니다.
+        '최신입니다'도 답이므로 반드시 적습니다.
+      -->
+      <div class="row">
+        <span class="label">{updateText}</span>
+        <button class="danger action" disabled={updateBusy} onclick={onUpdateClick}>
+          {newVersion ? '설치' : '확인'}
+        </button>
+      </div>
     </div>
 
     <!-- 스크롤바를 두지 않기로 했으므로 "더 있다"는 이 그늘로만 전해집니다 -->
@@ -413,6 +517,11 @@
     .knob {
       transition: none;
     }
+  }
+
+  /* 확인/설치 버튼. 삭제 버튼과 같은 모양이되 위험한 동작이 아닙니다 */
+  .action {
+    min-width: 46px;
   }
 
   /* 하위 항목은 한 단 들여씁니다 — 무엇에 딸린 설정인지 줄만 봐도 읽힙니다 */
