@@ -21,12 +21,6 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// 위젯을 클릭하러 가야 한다면 "나중에 적어야지"로 새는 항목이 생깁니다.
 const QUICK_ADD: &str = "Ctrl+Alt+G";
 
-/// 트레이의 '로그인 시 자동 시작' 체크 항목.
-///
-/// 설정 화면에도 같은 스위치가 있어서, 한쪽에서 바꾸면 다른 쪽 표시도 따라가야
-/// 합니다. 켜져 있다고 표시된 채 실제로는 꺼져 있는 것이 가장 나쁜 결과입니다.
-struct BootItem(CheckMenuItem<tauri::Wry>);
-
 struct WidgetState {
     /// 창이 포커스를 쥐고 있는지. 조작 중에는 아래로 내리지 않습니다.
     focused: AtomicBool,
@@ -239,16 +233,11 @@ fn autostart_enabled(app: AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
 }
 
-/// 켜고 끄면서 트레이 체크 표시도 함께 맞춥니다.
 #[tauri::command]
 fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     let launcher = app.autolaunch();
     let result = if enabled { launcher.enable() } else { launcher.disable() };
-    result.map_err(|e| e.to_string())?;
-    if let Some(item) = app.try_state::<BootItem>() {
-        let _ = item.0.set_checked(enabled);
-    }
-    Ok(())
+    result.map_err(|e| e.to_string())
 }
 
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
@@ -260,18 +249,13 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
-    // 매일 쓰는 위젯이라 로그인할 때마다 직접 켜게 두면 금방 안 쓰게 됩니다.
-    let autostart = app.autolaunch();
-    let launch_on = autostart.is_enabled().unwrap_or(false);
-    let boot = CheckMenuItem::with_id(app, "boot", "로그인 시 자동 시작", true, launch_on, None::<&str>)?;
-
     let update = MenuItem::with_id(app, "update", "업데이트 확인", true, None::<&str>)?;
 
-    app.manage(BootItem(boot.clone()));
-
-    let menu = Menu::with_items(app, &[&show, &hide, &pin, &boot, &sep, &update, &quit])?;
+    // 자동 시작은 설정 화면에만 둡니다. 양쪽에 두면 한쪽을 바꿀 때마다 다른 쪽
+    // 표시를 맞춰야 하고, 그 동기화가 어긋나는 순간 켜졌다고 표시된 채 실제로는
+    // 꺼져 있게 됩니다. 한 곳에만 있으면 어긋날 자리가 없습니다.
+    let menu = Menu::with_items(app, &[&show, &hide, &pin, &sep, &update, &quit])?;
     let pin_ref = pin.clone();
-    let boot_ref = boot.clone();
     let update_ref = update.clone();
 
     // 시작 직후 한 번, 이후 주기적으로 확인합니다.
@@ -310,17 +294,6 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                     let _ = window.set_always_on_top(pinned);
                     if pinned {
                         let _ = window.set_focus();
-                    }
-                }
-                "boot" => {
-                    let on = boot_ref.is_checked().unwrap_or(false);
-                    let launcher = app.autolaunch();
-                    let result = if on { launcher.enable() } else { launcher.disable() };
-                    if let Err(err) = result {
-                        // 실패하면 체크 상태를 되돌립니다. 켜졌다고 표시해놓고
-                        // 실제로는 안 켜지는 게 가장 나쁜 결과입니다.
-                        log::warn!("자동 시작 설정 실패: {err}");
-                        let _ = boot_ref.set_checked(!on);
                     }
                 }
                 "update" => {
