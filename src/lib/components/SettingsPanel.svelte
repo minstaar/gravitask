@@ -1,5 +1,6 @@
 ﻿<script lang="ts">
   import { theme } from '../theme';
+  import type { Settings } from '../settings';
   import type { Category, Task } from '../types';
 
   let {
@@ -15,7 +16,10 @@
     onRemove,
     onPerPage,
     onZoom,
-    onOpenSettings,
+    settings,
+    onSettings,
+    maxHeight,
+    zoomFactor = 1,
   }: {
     categories: Category[];
     tasks: Task[];
@@ -32,7 +36,12 @@
     onPerPage: (n: number) => void;
     /** delta는 -1(축소) 또는 +1(확대) */
     onZoom: (delta: number) => void;
-    onOpenSettings: () => void;
+    settings: Settings;
+    onSettings: (patch: Partial<Settings>) => void;
+    /** 이 영역이 쓸 수 있는 최대 높이. 넘치는 만큼은 끌어서 봅니다 */
+    maxHeight: number;
+    /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
+    zoomFactor?: number;
   } = $props();
 
   // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
@@ -41,6 +50,72 @@
   const openCount = $derived(
     new Map(categories.map((c) => [c.id, tasks.filter((t) => t.categoryId === c.id).length]))
   );
+
+  /**
+   * 설정이 길어지면 창이 끝없이 자라지 않도록 상한을 두고 끌어서 봅니다.
+   *
+   * 위젯은 이 영역 위에 그대로 남아 스크롤에서 빠져 있습니다. 그래서 어떤
+   * 컨트롤을 쓰려고 끌어 내리든, 그 컨트롤이 보이는 순간 위젯도 같이 보입니다 —
+   * 바꾼 결과를 못 보면서 조작하는 상황이 생기지 않습니다.
+   */
+  let content: HTMLElement | undefined = $state();
+  let contentHeight = $state(0);
+  let pan = $state(0);
+  let dragging = $state(false);
+
+  const range = $derived(Math.max(0, contentHeight - maxHeight));
+  const offset = $derived(Math.min(pan, range));
+  const boxHeight = $derived(Math.min(contentHeight || maxHeight, maxHeight));
+
+  $effect(() => {
+    if (!content) return;
+    const el = content;
+    const measure = () => (contentHeight = el.scrollHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
+
+  /** 4px은 움직여야 끄는 것으로 봅니다. 누르는 손이 흔들렸다고 화면이 밀리면 안 됩니다 */
+  const DRAG_THRESHOLD = 4;
+
+  function startPan(e: PointerEvent) {
+    if (e.button !== 0 || range <= 0) return;
+    const startY = e.clientY;
+    const from = offset;
+    let moved = false;
+
+    const onMove = (ev: PointerEvent) => {
+      const delta = (ev.clientY - startY) / (zoomFactor || 1);
+      if (!moved && Math.abs(delta) < DRAG_THRESHOLD) return;
+      moved = true;
+      dragging = true;
+      pan = Math.max(0, Math.min(range, from - delta));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      dragging = false;
+      // 정말 끌었다면 손을 뗀 자리의 버튼이 눌리면 안 됩니다
+      if (moved) {
+        window.addEventListener('click', (ev) => ev.stopPropagation(), {
+          capture: true,
+          once: true,
+        });
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  function wheelPan(e: WheelEvent) {
+    if (e.ctrlKey || e.metaKey || range <= 0) return; // 배율 조작은 가로채지 않습니다
+    e.preventDefault();
+    pan = Math.max(0, Math.min(range, offset + e.deltaY));
+  }
 </script>
 
 <section
@@ -52,104 +127,149 @@
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-name="{theme.type.category}px"
 >
-  <h2>주제 편집</h2>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="viewport"
+    class:pannable={range > 0}
+    class:dragging
+    style:height="{boxHeight}px"
+    onpointerdown={startPan}
+    onwheel={wheelPan}
+  >
+    <div class="content" bind:this={content} style:transform="translateY({-offset}px)">
+      <h2>주제 편집</h2>
 
-  <ul>
-    {#each categories as category, i (category.id)}
-      {@const open = openCount.get(category.id) ?? 0}
-      <li>
+      <ul>
+        {#each categories as category, i (category.id)}
+          {@const open = openCount.get(category.id) ?? 0}
+          <li>
+            <input
+              class="rename"
+              value={category.name}
+              aria-label="주제 이름"
+              oninput={(e) => onRename(category.id, e.currentTarget.value)}
+            />
+
+            <button
+              class="nudge"
+              disabled={i === 0}
+              aria-label="위로"
+              onclick={() => onMove(category.id, -1)}>↑</button
+            >
+            <button
+              class="nudge"
+              disabled={i === categories.length - 1}
+              aria-label="아래로"
+              onclick={() => onMove(category.id, 1)}>↓</button
+            >
+            <button
+              class="danger"
+              disabled={open > 0 || categories.length <= 1}
+              title={open > 0
+                ? `할 일 ${open}건이 남아 있어 지울 수 없습니다`
+                : categories.length <= 1
+                  ? '마지막 주제는 지울 수 없습니다'
+                  : '주제 삭제'}
+              aria-label="{category.name} 삭제"
+              onclick={() => onRemove(category.id)}>삭제</button
+            >
+          </li>
+        {/each}
+      </ul>
+
+      <button class="add" onclick={onAdd}>＋ 주제 추가</button>
+
+      <!--
+        보기 — 화면에 얼마나 담을지. 배율과 주제 수는 사실 같은 질문에 대한 답이라
+        나란히 둡니다. 둘 다 결과가 그 자리에서 즉시 보이므로 위젯 안에 있어야 합니다.
+      -->
+      <h2 class="section">보기</h2>
+
+      <div class="row">
+        <span class="label">배율</span>
+        <button class="nudge" aria-label="축소" disabled={zoom <= zoomSteps[0]} onclick={() => onZoom(-1)}
+          >−</button
+        >
+        <span class="count">{Math.round(zoom * 100)}%</span>
+        <button
+          class="nudge"
+          aria-label="확대"
+          disabled={zoom >= zoomSteps[zoomSteps.length - 1]}
+          onclick={() => onZoom(1)}>＋</button
+        >
+      </div>
+
+      <!--
+        주제가 늘 때마다 위젯이 옆으로 자라면 안 되므로, 한 번에 보여줄 수를 정하고
+        나머지는 페이지를 넘겨 봅니다. 상한은 폭 예산이 정합니다 — 그보다 더 넣으면
+        제목이 거의 남지 않습니다.
+      -->
+      <div class="row">
+        <span class="label">한 화면에 표시할 주제 수</span>
+        <button
+          class="nudge"
+          aria-label="적게 보기"
+          disabled={perPage <= 1}
+          onclick={() => onPerPage(perPage - 1)}>−</button
+        >
+        <span class="count">{perPage}개</span>
+        <button
+          class="nudge"
+          aria-label="많이 보기"
+          disabled={perPage >= maxPerPage}
+          onclick={() => onPerPage(perPage + 1)}>＋</button
+        >
+        {#if categories.length > perPage}
+          <span class="note">{Math.ceil(categories.length / perPage)}쪽</span>
+        {/if}
+      </div>
+
+      <h2 class="section">알림</h2>
+
+      <label class="check">
+        <input type="checkbox" checked={settings.notify} onchange={(e) => onSettings({ notify: e.currentTarget.checked })} />
+        <span>마감 알림 켜기</span>
+      </label>
+
+      <label class="check" class:off={!settings.notify}>
         <input
-          class="rename"
-          value={category.name}
-          aria-label="주제 이름"
-          oninput={(e) => onRename(category.id, e.currentTarget.value)}
+          type="checkbox"
+          disabled={!settings.notify}
+          checked={settings.notifyDayBefore}
+          onchange={(e) => onSettings({ notifyDayBefore: e.currentTarget.checked })}
         />
+        <span>24시간 전</span>
+      </label>
 
-        <button
-          class="nudge"
-          disabled={i === 0}
-          aria-label="위로"
-          onclick={() => onMove(category.id, -1)}>↑</button
-        >
-        <button
-          class="nudge"
-          disabled={i === categories.length - 1}
-          aria-label="아래로"
-          onclick={() => onMove(category.id, 1)}>↓</button
-        >
-        <button
-          class="danger"
-          disabled={open > 0 || categories.length <= 1}
-          title={open > 0
-            ? `할 일 ${open}건이 남아 있어 지울 수 없습니다`
-            : categories.length <= 1
-              ? '마지막 주제는 지울 수 없습니다'
-              : '주제 삭제'}
-          aria-label="{category.name} 삭제"
-          onclick={() => onRemove(category.id)}>삭제</button
-        >
-      </li>
-    {/each}
-  </ul>
+      <label class="check" class:off={!settings.notify}>
+        <input
+          type="checkbox"
+          disabled={!settings.notify}
+          checked={settings.notifyHourBefore}
+          onchange={(e) => onSettings({ notifyHourBefore: e.currentTarget.checked })}
+        />
+        <span>1시간 전</span>
+      </label>
 
-  <button class="add" onclick={onAdd}>＋ 주제 추가</button>
+      <!--
+        그냥 미루기만 하면 새벽 마감을 조용히 놓칩니다. 야간이 시작될 때
+        "오늘 밤 사이 마감 N건"을 한 번 알리고, 그 뒤로는 아침까지 조용합니다.
+      -->
+      <label class="check" class:off={!settings.notify}>
+        <input
+          type="checkbox"
+          disabled={!settings.notify}
+          checked={settings.quietNight}
+          onchange={(e) => onSettings({ quietNight: e.currentTarget.checked })}
+        />
+        <span>야간에는 모아서 아침에</span>
+      </label>
+    </div>
 
-  <!--
-    보기 — 화면에 얼마나 담을지. 배율과 주제 수는 사실 같은 질문에 대한 답이라
-    나란히 둡니다. 둘 다 결과가 그 자리에서 즉시 보이므로 위젯 안에 있어야 합니다.
-  -->
-  <h2 class="section">보기</h2>
-
-  <div class="row">
-    <span class="label">배율</span>
-    <button class="nudge" aria-label="축소" disabled={zoom <= zoomSteps[0]} onclick={() => onZoom(-1)}
-      >−</button
-    >
-    <span class="count">{Math.round(zoom * 100)}%</span>
-    <button
-      class="nudge"
-      aria-label="확대"
-      disabled={zoom >= zoomSteps[zoomSteps.length - 1]}
-      onclick={() => onZoom(1)}>＋</button
-    >
+    <!-- 스크롤바를 두지 않기로 했으므로 "더 있다"는 이 그늘로만 전해집니다 -->
+    {#if offset > 0.5}<div class="fade up"></div>{/if}
+    {#if offset < range - 0.5}<div class="fade down"></div>{/if}
   </div>
-
-  <!--
-    주제가 늘 때마다 위젯이 옆으로 자라면 안 되므로, 한 번에 보여줄 수를 정하고
-    나머지는 페이지를 넘겨 봅니다. 상한은 폭 예산이 정합니다 — 그보다 더 넣으면
-    제목이 거의 남지 않습니다.
-  -->
-  <div class="row">
-    <span class="label">한 화면에 표시할 주제 수</span>
-    <button
-      class="nudge"
-      aria-label="적게 보기"
-      disabled={perPage <= 1}
-      onclick={() => onPerPage(perPage - 1)}>−</button
-    >
-    <span class="count">{perPage}개</span>
-    <button
-      class="nudge"
-      aria-label="많이 보기"
-      disabled={perPage >= maxPerPage}
-      onclick={() => onPerPage(perPage + 1)}>＋</button
-    >
-    {#if categories.length > perPage}
-      <span class="note">{Math.ceil(categories.length / perPage)}쪽</span>
-    {/if}
-  </div>
-
-  <!--
-    환경설정은 별도 창입니다.
-    결과가 그 자리에서 보이지 않고, 자주 열지 않고, 폼이 큽니다. 위젯 창은
-    테두리도 크기 조절도 스크롤도 없고 내용에 맞춰 크기가 정해져서, 여기 담으면
-    열 때마다 위젯이 두 배가 됩니다.
-  -->
-  <h2 class="section">환경설정</h2>
-
-  <button class="add outbound" onclick={onOpenSettings}>
-    알림 · 시작 · 업데이트 설정 열기
-  </button>
 </section>
 
 <style>
@@ -159,17 +279,60 @@
     background: var(--surface);
     border: 1px solid var(--surface-border);
     color: var(--text);
+  }
+
+  /* 상한 있는 창. 내용이 넘치면 끌어서 봅니다 */
+  .viewport {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .viewport.pannable {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .viewport.dragging {
+    cursor: grabbing;
+  }
+
+  .content {
     display: flex;
     flex-direction: column;
     gap: 9px;
   }
 
+  .fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 14px;
+    pointer-events: none;
+  }
+
+  .fade.up {
+    top: 0;
+    background: linear-gradient(to bottom, rgba(10, 11, 16, 0.8), transparent);
+  }
+
+  .fade.down {
+    bottom: 0;
+    background: linear-gradient(to top, rgba(10, 11, 16, 0.8), transparent);
+  }
+
+  /**
+   * 소제목은 본문과 같은 글꼴을 씁니다.
+   *
+   * 고정폭에 자간을 넓히고 색까지 흐리게 하면 네 가지가 한꺼번에 약해지는
+   * 방향이라 위계가 서지 않습니다. 고정폭은 이 앱에서 '시간 축'이라는 뜻을
+   * 지고 있으니(12h, DUE) 소제목이 빌려 쓸 채널도 아닙니다.
+   * 크기와 굵기로만 구분하고, 갈래는 얇은 선이 나눕니다.
+   */
   h2 {
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: var(--fs-meta);
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--fs-name);
+    font-weight: 700;
+    color: var(--text);
     margin: 0;
   }
 
@@ -200,8 +363,28 @@
     border-top: 1px solid rgba(255, 255, 255, 0.09);
   }
 
-  .outbound {
-    text-align: left;
+  /* 알림 스위치들 */
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-meta);
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .check.off {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .check input {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    accent-color: #6a5fd0;
+    cursor: inherit;
   }
 
   .label {

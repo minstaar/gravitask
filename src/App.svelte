@@ -24,7 +24,7 @@
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
   import { maxTopicsPerPage } from './lib/layout';
-  import { openSettingsWindow } from './lib/settings';
+  import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
   import { theme } from './lib/theme';
   import type { NewTask, Task } from './lib/types';
 
@@ -118,7 +118,19 @@
     const measure = () => {
       const col = root.querySelector('.column');
       if (!col) return;
-      const gap = root.getBoundingClientRect().height - col.getBoundingClientRect().height;
+      /**
+       * 설정 카드는 빼고 잽니다.
+       *
+       * 넣어서 재면 설정을 열 때마다 기둥의 예산이 그만큼 깎여 위젯이 줄어듭니다.
+       * 설정을 아래에 펼치기로 한 이유가 '무엇을 바꾸든 결과가 위에 그대로
+       * 보이는 것'인데, 그 위젯이 쪼그라들면 앞뒤가 맞지 않습니다. 설정 영역은
+       * 제 상한을 따로 가지고 있으므로 창은 예측 가능한 만큼만 커집니다.
+       */
+      const editor = root.querySelector('.editor');
+      const gap =
+        root.getBoundingClientRect().height -
+        col.getBoundingClientRect().height -
+        (editor?.getBoundingClientRect().height ?? 0);
       const next = Math.round(gap / (view.zoom || 1));
       if (Number.isFinite(next) && Math.abs(next - chromeHeight) > 1) chromeHeight = next;
     };
@@ -131,6 +143,26 @@
   const columnBudget = $derived(
     Math.round((screenHeight * theme.layout.maxHeightFraction) / (view.zoom || 1)) - chromeHeight
   );
+
+  /** 알림·시스템 설정. 파일에서 읽어 오고, 바꾸면 바로 저장합니다 */
+  let settings = $state<Settings>({ ...DEFAULTS });
+
+  $effect(() => {
+    void loadSettings().then((saved) => (settings = saved));
+  });
+
+  function patchSettings(patch: Partial<Settings>) {
+    settings = { ...settings, ...patch };
+    void saveSettings(settings);
+  }
+
+  /**
+   * 설정 영역이 쓸 수 있는 높이.
+   *
+   * 주제가 몇 개든 이 상한을 넘지 않으므로, 설정을 열었을 때 창이 얼마나
+   * 커질지 예측 가능합니다. 넘치는 만큼은 영역 안에서 끌어 봅니다.
+   */
+  const settingsBudget = $derived(Math.round((screenHeight * 0.3) / (view.zoom || 1)));
 
   /** 팝오버 아래 숨 쉴 자리. 창 모서리에 딱 붙으면 잘린 것처럼 보입니다 */
   const SHEET_MARGIN = 10;
@@ -385,6 +417,18 @@
       onAdd={addTask}
     />
 
+
+    <Column
+      tasks={store.tasks}
+      categories={sorted}
+      now={store.now}
+      {reducedMotion}
+      budget={columnBudget}
+      zoom={view.zoom}
+      perPage={view.perPage}
+      onToggle={onComplete}
+    />
+
     {#if editing}
       <SettingsPanel
         categories={sorted}
@@ -399,20 +443,12 @@
         onRemove={removeCategory}
         onPerPage={setPerPage}
         onZoom={nudgeZoom}
-        onOpenSettings={() => void openSettingsWindow()}
+        {settings}
+        onSettings={patchSettings}
+        maxHeight={settingsBudget}
+        zoomFactor={view.zoom}
       />
     {/if}
-
-    <Column
-      tasks={store.tasks}
-      categories={sorted}
-      now={store.now}
-      {reducedMotion}
-      budget={columnBudget}
-      zoom={view.zoom}
-      perPage={view.perPage}
-      onToggle={onComplete}
-    />
 
     {#if toast}
       <div class="undo">

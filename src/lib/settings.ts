@@ -1,18 +1,23 @@
 import { readJson, writeJson } from './persist';
 
 /**
- * 위젯과 설정 창이 함께 보는 값들.
+ * 알림과 시스템 설정.
  *
- * 두 창은 각자 다른 자바스크립트 세계라 메모리를 나눠 쓰지 않습니다. 파일이
- * 진실이고, 한쪽이 고치면 이벤트로 알려 다른 쪽이 다시 읽습니다. 폴링으로
- * 맞추면 바꾼 것이 언제 반영될지 알 수 없고, 창을 닫아야 반영되게 하면
- * 설정을 만지는 동안 결과를 볼 수 없습니다.
+ * 한때 이 값들을 별도 창으로 빼려 했습니다. 위젯 창이 테두리도 크기 조절도
+ * 없고 내용에 맞춰 크기가 정해져서, 폼을 담으면 열 때마다 위젯이 두 배가
+ * 된다는 이유였습니다.
+ *
+ * 그 계획을 접은 이유는, 나눈 규칙을 사용자가 알 수 없기 때문입니다. 제
+ * 머릿속 규칙은 "위젯에 보이는 결과가 있느냐"였습니다 — 주제 이름·배율은
+ * 바꾸면 눈앞이 변하지만 알림·자동 시작은 아무것도 안 변하니까요. 그럴듯하지만
+ * 화면 어디에도 안 적혀 있는 규칙이라, 사용자에게는 "왜 이것만 한 번 더
+ * 눌러야 하지"로만 보입니다.
+ *
+ * 대신 설정을 위젯 아래에 펼치고 그 영역만 끌어 보게 했습니다. 위젯은 위에
+ * 그대로 남아서, 무엇을 바꾸든 결과가 바로 위에 보입니다.
  */
 
 const KEY = 'reminder-widget:settings:v1';
-
-/** 설정이 바뀌었다고 알리는 신호. 창을 가로질러 갑니다 */
-export const SETTINGS_CHANGED = 'gravitask://settings-changed';
 
 export interface Settings {
   /** 알림 전체 스위치. 꺼져 있으면 아래 값들은 의미가 없습니다 */
@@ -45,60 +50,4 @@ export async function loadSettings(): Promise<Settings> {
 
 export async function saveSettings(next: Settings): Promise<void> {
   await writeJson(KEY, next);
-  await announce();
-}
-
-const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-
-async function announce(): Promise<void> {
-  if (!inTauri) return;
-  try {
-    const { emit } = await import('@tauri-apps/api/event');
-    await emit(SETTINGS_CHANGED);
-  } catch {
-    // 알리지 못해도 저장은 끝났습니다. 다음에 읽을 때 반영됩니다.
-  }
-}
-
-/**
- * 설정 창을 엽니다.
- *
- * 트레이 메뉴에도 같은 항목이 있지만, 그쪽만 두면 안 됩니다 — Windows는 트레이
- * 아이콘을 기본으로 숨김 영역에 넣어 버려서, 알림 하나 끄려고 "숨겨진 아이콘
- * 표시"를 눌러 찾아야 합니다. 발견성은 시선이 이미 가 있는 곳에 있어야 하고,
- * 그건 위젯입니다. 트레이는 위젯을 숨겼을 때를 위한 예비 경로입니다.
- */
-export async function openSettingsWindow(): Promise<void> {
-  if (!inTauri) return;
-  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-
-  const existing = await WebviewWindow.getByLabel('settings');
-  if (existing) {
-    await existing.show();
-    await existing.unminimize();
-    await existing.setFocus();
-    return;
-  }
-
-  // 위젯과 달리 평범한 창입니다. 테두리도 크기 조절도 있고 작업 표시줄에도
-  // 나옵니다 — 폼을 담기에는 그쪽이 맞습니다.
-  const w = new WebviewWindow('settings', {
-    url: 'settings.html',
-    title: 'Gravitask 설정',
-    width: 440,
-    height: 560,
-    minWidth: 360,
-    minHeight: 420,
-    resizable: true,
-    decorations: true,
-    transparent: false,
-    skipTaskbar: false,
-    center: true,
-  });
-
-  await new Promise<void>((resolve) => {
-    void w.once('tauri://created', () => resolve());
-    void w.once('tauri://error', () => resolve());
-    setTimeout(resolve, 2000);
-  });
 }
