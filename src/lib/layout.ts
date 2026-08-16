@@ -225,10 +225,21 @@ export function computeAxis(
     ...splits.map((s) => (s.queue.length > 0 ? stack(s.queue.length, L.floor) + L.queueTop : 0))
   );
 
+  /**
+   * 활주로는 위아래로 물러나지 않습니다.
+   *
+   * 지남과 대기는 순번이라 가장자리 여백이 그냥 여백이지만, 활주로는 진짜
+   * 눈금입니다. 여기서 물러나면 마감이 딱 24시간 남은 일이 24H 선에 닿지 않고
+   * 마감 순간인 일이 DUE 선에 닿지 않습니다 — 두 선이 무엇을 가리키는지가
+   * 흐려집니다. 그래서 h=0이면 카드 바닥이 DUE 선에, h=24면 카드 위쪽이 24H
+   * 선에 정확히 붙습니다.
+   */
+  const RUNWAY_EDGE = 0;
+
   const anyRunway = splits.some((s) => s.runway.length > 0);
   const maxRunway = Math.max(0, ...splits.map((s) => s.runway.length));
   const runwayContent = anyRunway
-    ? Math.max(L.runwayHeight, stack(maxRunway, L.floor * 2))
+    ? Math.max(L.runwayHeight, stack(maxRunway, RUNWAY_EDGE * 2))
     : L.runwayCollapsed;
 
   /**
@@ -255,7 +266,7 @@ export function computeAxis(
 
   // 활주로 안에서 시간이 흐르는 구간. 보이는 높이가 아니라 content 기준입니다 —
   // 끌어서 보더라도 같은 높이가 같은 시각이어야 하니까요.
-  const runwayTravel = Math.max(0, runwayContent - L.cardHeight - L.floor * 2);
+  const runwayTravel = Math.max(0, runwayContent - L.cardHeight - RUNWAY_EDGE * 2);
 
   const lanes: Lane[] = categories.map((category, ci) => {
     const s = splits[ci];
@@ -277,9 +288,9 @@ export function computeAxis(
     // 이상적인 위치를 먼저 구하고, 겹치는 만큼만 밀어냅니다.
     const ideal = s.runway.map((x) => {
       const frac = Math.max(0, Math.min(1, x.h / L.runwayHours));
-      return L.floor + frac * runwayTravel;
+      return RUNWAY_EDGE + frac * runwayTravel;
     });
-    const resolved = spreadApart(ideal, spacing, L.floor, L.floor + runwayTravel);
+    const resolved = spreadApart(ideal, spacing, RUNWAY_EDGE, RUNWAY_EDGE + runwayTravel);
 
     s.runway.forEach((x, i) => {
       placed.push({
@@ -322,7 +333,7 @@ export function computeAxis(
     queueHeight,
     runwayContent,
     runwayTravel,
-    runwayFloor: L.floor,
+    runwayFloor: RUNWAY_EDGE,
     lanes,
   };
 }

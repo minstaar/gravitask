@@ -99,6 +99,34 @@ const queueOnly = computeAxis(fill('a', 0, 1, 30), categories, NOW, { budget: 42
 check('덜 필요한 구역이 남긴 몫은 다른 구역이 가져간다', queueOnly.queueHeight > 420 * 0.6, true);
 check('그래도 활주로는 최소치를 지킨다', queueOnly.runwayHeight >= L.runwayHeight, true);
 
+// ---- 경계에 딱 걸린 항목이 경계선에 닿는가 ----
+//
+// 활주로는 순번이 아니라 눈금이다. 마감이 정확히 24시간 남았는데 24H 선에 닿지
+// 않거나 마감 순간인데 DUE 선에 닿지 않으면, 두 선이 무엇을 가리키는지 흐려진다.
+
+seq = 0;
+const edges = computeAxis(
+  [task('a', 24), task('a', 0.001), task('a', 12)],
+  categories,
+  NOW,
+  { budget: 1000 }
+);
+const atHour = (h: number) =>
+  edges.lanes[0].placed.find((p) => Math.abs((p.task.due - NOW) / MS_HOUR - h) < 0.01);
+
+check('마감 순간인 항목은 카드 바닥이 DUE 선에 붙는다', atHour(0.001)?.y, 0);
+check(
+  '딱 24시간 남은 항목은 카드 위쪽이 24H 선에 붙는다',
+  (atHour(24)?.y ?? -1) + L.cardHeight,
+  edges.runwayContent
+);
+check('활주로는 가장자리 여백이 없다', edges.runwayFloor, 0);
+check(
+  '12시간 남은 항목은 활주로 한가운데에 온다',
+  Math.round(((atHour(12)?.y ?? 0) / edges.runwayTravel) * 100),
+  50
+);
+
 // ---- content 좌표에서는 절대 겹치지 않는가 ----
 
 const worstOverlap = (zone: string) => {
