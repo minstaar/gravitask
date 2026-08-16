@@ -1,4 +1,4 @@
-﻿import raw from './theme.json';
+﻿import raw from './theme.json' with { type: 'json' };
 
 export interface RampStep {
   id: string;
@@ -21,13 +21,31 @@ export interface Theme {
     /** 활주로 눈금 위치(0~1). 촘촘하면 오히려 안 읽힙니다 */
     runwayTicks: number[];
     cardHeight: number;
-    queueGap: number;
-    overdueGap: number;
+    /**
+     * 카드끼리 최소로 벌어져야 하는 간격.
+     *
+     * 세 구역이 하나를 같이 씁니다. 예전에는 구역마다 따로 있어서 실효 간격이
+     * 4·5·6px로 미묘하게 달랐는데, 그 차이에 뜻이 있었던 게 아니라 값이
+     * 흩어져 있었을 뿐입니다.
+     */
+    cardGap: number;
     minQueueHeight: number;
-    /** 활주로에서 카드끼리 최소로 벌어져야 하는 간격 */
-    minCardGap: number;
     floor: number;
-    maxQueueVisible: number;
+    /** 경계선과 대기 구역 첫 카드 사이 간격 */
+    queueTop: number;
+    /**
+     * 기둥이 화면 높이에서 차지할 수 있는 최대 비율.
+     *
+     * 구역마다 최대 개수를 손으로 정하는 대신, 예산 하나를 두고 거기서
+     * 구역 높이를 나눠 씁니다. 개수 상한은 화면이 정할 일이지 사람이 미리
+     * 맞힐 수 있는 값이 아닙니다 — 노트북과 외부 모니터에서 답이 다릅니다.
+     *
+     * 예산에 안 들어가는 항목은 접히는 게 아니라 구역 안에서 끌어 볼 수
+     * 있습니다. 그래서 이 값을 줄여도 정보를 잃지는 않습니다.
+     */
+    maxHeightFraction: number;
+    /** 화면이 아무리 작아도 기둥이 이보다 짧아지지는 않습니다 */
+    minColumnHeight: number;
     /** 레인 하나의 선호 폭. 주제가 적을 때 쓰는 값입니다 */
     laneWidth: number;
     /** 레인이 좁아질 수 있는 하한. 이보다 좁으면 제목이 거의 안 남습니다 */

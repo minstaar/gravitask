@@ -1,6 +1,7 @@
-﻿import { theme, type Theme } from './theme';
-import { formatRemaining, hoursUntil, visualFor, type Visual, type Zone } from './urgency';
-import type { Category, Task } from './types';
+// 확장자를 붙입니다 — 테스트를 번들러 없이 node로 바로 돌립니다 (urgency.ts와 같은 이유)
+import { theme, type Theme } from './theme.ts';
+import { formatRemaining, hoursUntil, visualFor, type Visual, type Zone } from './urgency.ts';
+import type { Category, Task } from './types.ts';
 
 /**
  * 시간축 하나를 모든 주제가 공유하고, 주제마다 레인을 하나씩 가집니다.
@@ -12,14 +13,23 @@ import type { Category, Task } from './types';
  * 구역 높이는 전체 기준으로 계산합니다. 그래야 모든 레인이 같은 마감선과 같은
  * 경계선을 쓰고, 활주로에서 "같은 높이 = 같은 시간"이 성립합니다.
  *
- * 대기 구역은 레인마다 자기 순번으로 쌓습니다. 아직 급하지 않은 것들이라
- * 주제를 가로지르는 정밀 비교가 필요 없고, 정확한 값은 카드의 "N일 남음"이
- * 알려줍니다.
+ * ---
+ *
+ * 높이에는 예산이 있습니다.
+ *
+ * 예전에는 구역마다 '최대 몇 개'를 손으로 정하고 넘치면 "외 N"으로 접었습니다.
+ * 두 가지가 틀렸습니다. 첫째, 몇 개가 들어가는지는 화면이 정할 일이지 사람이
+ * 미리 맞힐 수 있는 값이 아닙니다. 둘째, 접힌 항목에 닿을 방법이 없었습니다.
+ *
+ * 그래서 이제 구역마다 두 개의 높이를 계산합니다 — 눈에 보이는 높이(height)와
+ * 카드가 실제로 차지하는 높이(content)입니다. content가 height보다 크면 그
+ * 구역은 끌어서 볼 수 있고, 접히는 것은 없습니다.
  */
 
 export interface Placed {
   task: Task;
   visual: Visual;
+  /** 구역 안에서의 위치. 구역 바닥이 0이고 위로 갈수록 커집니다 */
   y: number;
   remaining: string;
   zone: Zone;
@@ -28,7 +38,21 @@ export interface Placed {
 export interface Lane {
   category: Category;
   placed: Placed[];
-  hiddenQueue: number;
+  /**
+   * 구역별 카드 총 높이. 구역의 보이는 높이보다 크면 그만큼 끌 수 있습니다.
+   * 지남과 대기는 레인마다 다르므로 여기에 둡니다.
+   */
+  content: { overdue: number; queue: number };
+  /**
+   * 아직 마감이 지나지 않은 할 일 수 (활주로 + 대기).
+   *
+   * 레인 머리에 이 수를 답니다. 예전에는 '지금 안 보이는 개수'를 "외 N"으로
+   * 적었는데, 구역을 끌 때마다 숫자가 바뀌어서 무엇을 세는 값인지 읽히지
+   * 않았습니다. 남은 할 일 수는 끌어도 변하지 않고, 흘끗 볼 때 알고 싶은
+   * 것도 그쪽입니다. 지남은 빼고 셉니다 — 이미 놓친 것은 '남은 일'이 아니고,
+   * 그건 마감선 아래 색과 사선이 따로 말해 줍니다.
+   */
+  upcoming: number;
 }
 
 export interface AxisLayout {
@@ -38,16 +62,23 @@ export interface AxisLayout {
   deadlineY: number;
   /** 24시간 경계선의 바닥 기준 높이 */
   boundaryY: number;
-  /** 지금 활주로가 차지한 높이 (접혔는지 펼쳐졌는지) */
+  /** 구역별로 보이는 높이 */
+  overdueHeight: number;
   runwayHeight: number;
-  ticks: { label: string; y: number }[];
+  queueHeight: number;
+  /**
+   * 활주로가 카드를 놓는 데 실제로 쓴 높이.
+   *
+   * 활주로는 눈금이라서 레인마다 다를 수 없습니다 — 모든 레인이 같은 시간
+   * 좌표를 써야 같은 높이가 같은 시각을 뜻합니다. 그래서 지남·대기와 달리
+   * Lane이 아니라 여기 있습니다.
+   */
+  runwayContent: number;
+  /** 활주로 안에서 시간이 실제로 흐르는 구간 (바닥 여백을 뺀 부분) */
+  runwayTravel: number;
+  /** 활주로 바닥에서 시간 0인 지점까지의 여백 */
+  runwayFloor: number;
   lanes: Lane[];
-}
-
-interface Split {
-  overdue: Prepared[];
-  runway: Prepared[];
-  queue: Prepared[];
 }
 
 interface Prepared {
@@ -55,6 +86,12 @@ interface Prepared {
   h: number;
   visual: Visual;
   zone: Zone;
+}
+
+interface Split {
+  overdue: Prepared[];
+  runway: Prepared[];
+  queue: Prepared[];
 }
 
 /**
@@ -87,15 +124,64 @@ function spreadApart(ys: number[], gap: number, lo: number, hi: number): number[
   return out;
 }
 
+/**
+ * 예산을 구역들에 나눠 줍니다.
+ *
+ * 필요한 만큼 다 주고도 남으면 그대로 줍니다. 모자라면 먼저 각자의 최소치를
+ * 보장하고, 남은 것을 고르게 나눕니다. 덜 필요한 구역이 남긴 몫은 나머지가
+ * 다시 나눠 갖습니다.
+ *
+ * 급한 순서로 몰아주지 않습니다. 그렇게 하면 오늘 마감이 스무 개인 날 활주로가
+ * 예산을 다 먹고 지남과 대기가 통째로 사라지는데, 하필 그런 날 정작 봐야 하는
+ * 것이 밀린 일입니다. 우선순위는 최소치에만 담아 둡니다 — 활주로의 최소치가
+ * 가장 크고, 그래서 한가한 날에도 오늘 할 일은 늘 보입니다.
+ */
+function allocate(need: number[], floor_: number[], budget: number): number[] {
+  const total = need.reduce((a, b) => a + b, 0);
+  if (total <= budget) return need.slice();
+
+  const out = floor_.map((f, i) => Math.min(f, need[i]));
+  let left = budget - out.reduce((a, b) => a + b, 0);
+
+  // 최소치조차 예산을 넘으면 더 줄일 곳이 없습니다. 그대로 둡니다 —
+  // 여기서 더 깎으면 카드 한 장도 못 보여주는 구역이 생깁니다.
+  if (left <= 0) return out.map((v) => Math.floor(v));
+
+  const want = need.map((n, i) => Math.max(0, n - out[i]));
+  let open = want.map((w, i) => (w > 0 ? i : -1)).filter((i) => i >= 0);
+
+  while (left > 0.5 && open.length > 0) {
+    const share = left / open.length;
+    const modest = open.filter((i) => want[i] <= share);
+
+    if (modest.length === 0) {
+      // 모두가 제 몫 이상을 원합니다 — 똑같이 나누고 끝냅니다
+      for (const i of open) out[i] += share;
+      break;
+    }
+
+    // 적게 원하는 쪽을 먼저 채워 주고, 남은 것을 다음 바퀴에서 다시 나눕니다
+    for (const i of modest) {
+      out[i] += want[i];
+      left -= want[i];
+      want[i] = 0;
+    }
+    open = open.filter((i) => want[i] > 0);
+  }
+
+  return out.map((v) => Math.floor(v));
+}
+
 export function computeAxis(
   tasks: Task[],
   categories: Category[],
   now: number,
-  opts: { reducedMotion?: boolean; t?: Theme } = {}
+  opts: { reducedMotion?: boolean; t?: Theme; budget?: number } = {}
 ): AxisLayout {
   const t = opts.t ?? theme;
   const L = t.layout;
   const nowDate = new Date(now);
+  const spacing = L.cardHeight + L.cardGap;
 
   const prepare = (list: Task[]): Prepared[] =>
     list
@@ -116,39 +202,48 @@ export function computeAxis(
     };
   });
 
-  // 구역 높이는 가장 붐비는 레인에 맞춥니다. 쓸 일이 없는 구역은 자리를 비웁니다.
-  const maxOverdue = Math.max(0, ...splits.map((s) => s.overdue.length));
-  const anyRunway = splits.some((s) => s.runway.length > 0);
-  const maxQueue = Math.max(
+  /** n장을 겹치지 않게 쌓는 데 필요한 높이 */
+  const stack = (n: number, pad: number) =>
+    n > 0 ? (n - 1) * spacing + L.cardHeight + pad : 0;
+
+  // 카드가 실제로 차지하는 높이. 구역마다 가장 붐비는 레인에 맞춥니다.
+  const overdueContent = Math.max(0, ...splits.map((s) => stack(s.overdue.length, L.floor)));
+  const queueContent = Math.max(
     0,
-    ...splits.map((s) => Math.min(s.queue.length, L.maxQueueVisible))
+    ...splits.map((s) => (s.queue.length > 0 ? stack(s.queue.length, L.floor) + L.queueTop : 0))
   );
 
-  const overdueHeight = maxOverdue > 0 ? maxOverdue * L.overdueGap + L.floor : 0;
+  const anyRunway = splits.some((s) => s.runway.length > 0);
+  const maxRunway = Math.max(0, ...splits.map((s) => s.runway.length));
+  const runwayContent = anyRunway
+    ? Math.max(L.runwayHeight, stack(maxRunway, L.floor * 2))
+    : L.runwayCollapsed;
 
   /**
-   * 활주로는 붐비면 늘어납니다.
+   * 예산.
    *
-   * 활주로 안에서 카드는 실제 시간 위치에 놓이므로, 비슷한 시각에 마감이
-   * 몰리면 서로 겹칩니다. 고정 높이를 유지한 채 밀어내면 시간 위치가 크게
-   * 왜곡되므로, 먼저 구역을 키워 자리를 만들고 남은 겹침만 밀어냅니다.
+   * 주지 않으면 필요한 만큼 다 씁니다 — 테스트나 화면 크기를 모르는 상황에서
+   * 예산을 멋대로 지어내는 것보다, 예산이 없다는 사실을 그대로 두는 편이 낫습니다.
    */
-  const maxRunway = Math.max(0, ...splits.map((s) => s.runway.length));
-  const spacing = L.cardHeight + L.minCardGap;
-  const neededRunway =
-    maxRunway > 0 ? (maxRunway - 1) * spacing + L.cardHeight + L.floor * 2 : 0;
-  const runwayHeight = anyRunway
-    ? Math.max(L.runwayHeight, neededRunway)
-    : L.runwayCollapsed;
+  const budget = Math.max(L.minColumnHeight, opts.budget ?? Number.POSITIVE_INFINITY);
+
+  const [overdueHeight, runwayHeight, queueHeight] = allocate(
+    [overdueContent, runwayContent, Math.max(L.minQueueHeight, queueContent)],
+    [
+      overdueContent > 0 ? L.cardHeight + L.floor : 0,
+      anyRunway ? Math.min(runwayContent, L.runwayHeight) : L.runwayCollapsed,
+      L.minQueueHeight,
+    ],
+    budget
+  );
 
   const deadlineY = overdueHeight;
   const boundaryY = deadlineY + runwayHeight;
-  const queueHeight = Math.max(L.minQueueHeight, maxQueue * L.queueGap + 10);
   const height = boundaryY + queueHeight;
 
-  const runwayFloor = deadlineY + L.floor;
-  const runwayTravel = runwayHeight - L.cardHeight - L.floor * 2;
-  const runwayCeil = runwayFloor + runwayTravel;
+  // 활주로 안에서 시간이 흐르는 구간. 보이는 높이가 아니라 content 기준입니다 —
+  // 끌어서 보더라도 같은 높이가 같은 시각이어야 하니까요.
+  const runwayTravel = Math.max(0, runwayContent - L.cardHeight - L.floor * 2);
 
   const lanes: Lane[] = categories.map((category, ci) => {
     const s = splits[ci];
@@ -161,7 +256,7 @@ export function computeAxis(
         task: x.task,
         visual: x.visual,
         zone: x.zone,
-        y: L.floor / 2 + i * L.overdueGap,
+        y: L.floor / 2 + i * spacing,
         remaining: formatRemaining(x.task.due, now, x.zone),
       });
     });
@@ -170,9 +265,9 @@ export function computeAxis(
     // 이상적인 위치를 먼저 구하고, 겹치는 만큼만 밀어냅니다.
     const ideal = s.runway.map((x) => {
       const frac = Math.max(0, Math.min(1, x.h / L.runwayHours));
-      return runwayFloor + frac * runwayTravel;
+      return L.floor + frac * runwayTravel;
     });
-    const resolved = spreadApart(ideal, spacing, runwayFloor, runwayCeil);
+    const resolved = spreadApart(ideal, spacing, L.floor, L.floor + runwayTravel);
 
     s.runway.forEach((x, i) => {
       placed.push({
@@ -185,30 +280,37 @@ export function computeAxis(
     });
 
     // 대기 — 레인별 균등 간격.
-    const visible = s.queue.slice(0, L.maxQueueVisible);
-    visible.forEach((x, i) => {
+    s.queue.forEach((x, i) => {
       placed.push({
         task: x.task,
         visual: x.visual,
         zone: x.zone,
-        y: boundaryY + 10 + i * L.queueGap,
+        y: L.queueTop + i * spacing,
         remaining: formatRemaining(x.task.due, now, x.zone),
       });
     });
 
-    return { category, placed, hiddenQueue: s.queue.length - visible.length };
+    return {
+      category,
+      placed,
+      content: {
+        overdue: stack(s.overdue.length, L.floor),
+        queue: s.queue.length > 0 ? stack(s.queue.length, L.floor) + L.queueTop : 0,
+      },
+      upcoming: s.runway.length + s.queue.length,
+    };
   });
 
-  // 접힌 활주로에는 눈금을 그릴 자리가 없습니다.
-  const ticks = anyRunway
-    ? L.runwayTicks.map((f) => {
-        const h = L.runwayHours * f;
-        return {
-          label: `${Math.round(h)}h`,
-          y: deadlineY + L.floor + (h / L.runwayHours) * runwayTravel + L.cardHeight / 2,
-        };
-      })
-    : [];
-
-  return { height, deadlineY, boundaryY, runwayHeight, ticks, lanes };
+  return {
+    height,
+    deadlineY,
+    boundaryY,
+    overdueHeight,
+    runwayHeight,
+    queueHeight,
+    runwayContent,
+    runwayTravel,
+    runwayFloor: L.floor,
+    lanes,
+  };
 }

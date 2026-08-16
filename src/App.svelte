@@ -5,20 +5,25 @@
   import {
     addCategory,
     addTask,
+    completeTask,
+    init,
     moveCategory,
-    refresh,
+    nudgeZoom,
     removeCategory,
     renameCategory,
     markSeeded,
-    restoreTask,
+    setZoom,
     startClock,
     store,
-    toggleTask,
+    undo,
+    undoLast,
+    view,
     wasSeeded,
+    ZOOM_STEPS,
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
   import { theme } from './lib/theme';
-  import type { NewTask } from './lib/types';
+  import type { NewTask, Task } from './lib/types';
 
   // 창 테두리를 없앴기 때문에 앱 안에서 끌 수 있는 영역을 직접 제공해야 합니다.
   const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -37,28 +42,132 @@
   /** 편집 모드. 평소에는 위젯을 깔끔하게 두고, 손댈 때만 조작부를 드러냅니다 */
   let editing = $state(false);
 
-  /** 방금 완료한 항목. 잘못 눌렀을 때 되돌릴 기회를 잠깐 남깁니다 */
-  let undoable = $state<{ id: string; title: string } | null>(null);
-  let undoTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * 방금 완료한 항목을 잠깐 띄웁니다.
+   *
+   * 이 팝업이 되돌릴 수 있는 범위를 정하는 건 아닙니다. 실제 범위는 store의
+   * 되돌리기 스택이 쥐고 있고(최근 10개), 팝업은 방금 누른 것을 알아채게 하는
+   * 역할만 합니다. 그래서 팝업이 사라져도 Ctrl+Z는 계속 듣습니다 — 버튼에
+   * 단축키를 같이 적어 그 사실을 알립니다.
+   */
+  let toast = $state<{ title: string } | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   const UNDO_WINDOW = 7000;
 
-  function completeTask(task: (typeof store.tasks)[number]) {
-    const wasOpen = task.completedAt === null;
-    void toggleTask(task);
-    if (!wasOpen) return;
-
-    undoable = { id: task.id, title: task.title };
-    clearTimeout(undoTimer);
-    undoTimer = setTimeout(() => (undoable = null), UNDO_WINDOW);
+  function onComplete(task: Task) {
+    void completeTask(task);
+    toast = { title: task.title };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), UNDO_WINDOW);
   }
 
-  function undoComplete() {
-    if (!undoable) return;
-    void restoreTask(undoable.id);
-    clearTimeout(undoTimer);
-    undoable = null;
+  async function undoComplete() {
+    if (!(await undoLast())) return;
+    clearTimeout(toastTimer);
+    toast = null;
   }
+
+  /**
+   * 열린 팝오버만큼 패널 아래에 자리를 잡아 둡니다.
+   *
+   * 달력과 시각 목록은 position:absolute라 패널 높이에 잡히지 않습니다. 창이
+   * 패널 크기를 따라가고 넘치는 부분은 잘리므로, 할 일이 적어 기둥이 짧을 때는
+   * 달력 아래쪽 두 줄이 창 밖으로 나가 눌리지 않았습니다.
+   *
+   * 자리를 QuickAdd 안이 아니라 패널 맨 아래에 잡습니다. 폼 안에 잡으면 달력을
+   * 열 때마다 기둥이 통째로 밀려 내려가는데, 읽던 것이 움직이는 쪽이 잘리는
+   * 것만큼 나쁩니다. 아래에 잡으면 창만 아래로 자라고 달력이 기둥을 덮습니다.
+   *
+   * 기준을 spacer의 위쪽 모서리로 잡는 것이 핵심입니다. 패널 바닥을 기준으로
+   * 재면 자리를 넓힐수록 바닥이 내려가 다시 재게 되고 되먹임이 멈추지 않습니다.
+   * spacer의 위쪽은 제 높이와 무관하므로 고정점이 됩니다.
+   */
+  /**
+   * 기둥이 쓸 수 있는 높이.
+   *
+   * 화면 높이의 일부만 씁니다. 구역마다 '최대 몇 개'를 손으로 정하는 대신
+   * 예산 하나를 주면, 몇 개가 들어가는지는 화면이 답합니다 — 노트북과 외부
+   * 모니터에서 답이 다르니 사람이 미리 맞힐 수 있는 값이 아닙니다.
+   *
+   * 예산에서 밀려난 카드는 접히지 않고 구역 안에서 끌어 볼 수 있습니다.
+   */
+  let screenHeight = $state(1080);
+
+  $effect(() => {
+    const read = () => (screenHeight = window.screen?.availHeight || window.innerHeight);
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  });
+
+  /**
+   * 기둥 위아래로 늘 붙어 있는 것들(제목줄·입력줄·주제 편집·여백)의 높이.
+   *
+   * 재서 구합니다. 나열해서 더하면 편집 패널을 열고 닫을 때마다 빠뜨립니다.
+   * 기둥이 줄면 패널도 같이 줄어 이 값은 그대로라, 되먹임이 생기지 않습니다.
+   */
+  let chromeHeight = $state(150);
+
+  $effect(() => {
+    if (!panel) return;
+    const root = panel;
+    const measure = () => {
+      const col = root.querySelector('.column');
+      if (!col) return;
+      const gap = root.getBoundingClientRect().height - col.getBoundingClientRect().height;
+      const next = Math.round(gap / (view.zoom || 1));
+      if (Number.isFinite(next) && Math.abs(next - chromeHeight) > 1) chromeHeight = next;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  });
+
+  const columnBudget = $derived(
+    Math.round((screenHeight * theme.layout.maxHeightFraction) / (view.zoom || 1)) - chromeHeight
+  );
+
+  /** 팝오버 아래 숨 쉴 자리. 창 모서리에 딱 붙으면 잘린 것처럼 보입니다 */
+  const SHEET_MARGIN = 10;
+
+  let openSheet = $state<HTMLElement | null>(null);
+  let spacer: HTMLElement | undefined = $state();
+  let reserve = $state(0);
+
+  $effect(() => {
+    const sheet = openSheet;
+    const anchor = spacer;
+    if (!sheet || !anchor) {
+      reserve = 0;
+      return;
+    }
+
+    /**
+     * getBoundingClientRect는 배율이 곱해진 화면 픽셀을 돌려주는데, spacer는
+     * 배율이 걸린 패널 *안에* 있어서 지정한 높이에 배율이 한 번 더 곱해집니다.
+     * 나눠 주지 않으면 150%에서 필요한 자리의 1.5배를 잡아 창 아래가 텅 빕니다.
+     */
+    const measure = () => {
+      const scale = view.zoom || 1;
+      const over = (sheet.getBoundingClientRect().bottom - anchor.getBoundingClientRect().top) / scale;
+      reserve = over > 0 ? Math.ceil(over) + SHEET_MARGIN : 0;
+    };
+
+    // 붙자마자 한 번, 다음 프레임에 한 번 더 잽니다. 첫 프레임에는 달력이
+    // 아직 자리를 잡는 중이라 몇 px 작게 잡히는 때가 있습니다.
+    measure();
+    const frame = requestAnimationFrame(measure);
+
+    // 달을 넘기면 주 수가 바뀌어 달력 높이가 변합니다
+    const observer = new ResizeObserver(measure);
+    observer.observe(sheet);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  });
 
   $effect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -68,9 +177,51 @@
     return () => mq.removeEventListener('change', on);
   });
 
+  /**
+   * 창은 숨은 채로 떠서, 내용에 맞는 크기를 잡은 뒤에 나타납니다.
+   *
+   * tauri.conf.json의 620×520은 창이 태어나는 크기일 뿐 맞는 크기가 아닙니다.
+   * 실제 크기는 할 일이 몇 개인지, 배율이 얼마인지에 달려 있어서 설정 파일이
+   * 미리 알 수 없습니다. 보이는 채로 띄우면 저장된 데이터를 읽어 오는 동안
+   * 620×520에 눌린 화면이 먼저 보이고, 그게 "처음 켜면 잘려 보인다"의 정체입니다.
+   */
+  let revealed = false;
+
+  async function revealWindow() {
+    if (revealed || !inTauri) return;
+    revealed = true;
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().show();
+  }
+
+  /** Svelte가 DOM을 갱신하고 브라우저가 배치를 끝낼 때까지 기다립니다 */
+  const settled = () =>
+    new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+
   $effect(() => {
-    void refresh().then(seedIfEmpty);
+    void init()
+      .then(seedIfEmpty)
+      .then(settled)
+      .then(fitWindow)
+      .catch(() => {})
+      // 크기를 못 맞췄더라도 창은 반드시 보여야 합니다.
+      // 잘려 보이는 편이 안 보이는 것보다 낫습니다.
+      .finally(revealWindow);
+
     return startClock();
+  });
+
+  // Ctrl+휠로 배율을 바꿉니다. 브라우저에서 몸에 밴 동작이라 설명이 필요 없습니다.
+  $effect(() => {
+    const on = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      nudgeZoom(e.deltaY < 0 ? 1 : -1);
+    };
+    window.addEventListener('wheel', on, { passive: false });
+    return () => window.removeEventListener('wheel', on);
   });
 
   $effect(() => {
@@ -92,9 +243,24 @@
         quickAdd?.focus();
       }
       // 되돌리기는 Ctrl+Z여야 합니다. 다른 곳에서 몸에 밴 동작입니다.
-      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && undoable) {
+      // 팝업이 떠 있는지와 무관하게, 스택에 남아 있으면 듣습니다.
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && undo.stack.length > 0) {
         e.preventDefault();
-        undoComplete();
+        void undoComplete();
+      }
+
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        nudgeZoom(1);
+      }
+      if (e.key === '-') {
+        e.preventDefault();
+        nudgeZoom(-1);
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        setZoom(1);
       }
     };
     window.addEventListener('keydown', on);
@@ -180,28 +346,50 @@
        매끄럽지 않은데, opacity는 GPU 합성이라 확실히 부드럽습니다. -->
   <div class="backdrop" aria-hidden="true"></div>
 
-  <div class="panel" bind:this={panel}>
+  <!-- 배율은 창 크기가 아니라 여기서 정합니다. zoom은 transform과 달리 레이아웃
+       단계에 반영되므로 마감선·축선 같은 1px 선이 축소에서 사라지지 않습니다. -->
+  <div class="panel" bind:this={panel} style:zoom={view.zoom}>
     <div class="dragbar" data-tauri-drag-region={inTauri ? true : undefined}>
       <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>
         <span style:color={theme.surface.brandWarm}>GRAVI</span><span
           style:color={theme.surface.brandCool}>TASK</span
         >
       </span>
-      <button
-        class="edit-toggle"
-        class:on={editing}
-        aria-pressed={editing}
-        title={editing ? '편집 끝내기' : '주제 편집'}
-        onclick={() => (editing = !editing)}
-      >
-        {editing ? '완료' : '주제 편집'}
-      </button>
+
+      <div class="tools">
+        {#if editing}
+          <div class="zoom">
+            <button
+              aria-label="축소"
+              disabled={view.zoom <= ZOOM_STEPS[0]}
+              onclick={() => nudgeZoom(-1)}>−</button
+            >
+            <span class="pct">{Math.round(view.zoom * 100)}%</span>
+            <button
+              aria-label="확대"
+              disabled={view.zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+              onclick={() => nudgeZoom(1)}>+</button
+            >
+          </div>
+        {/if}
+
+        <button
+          class="edit-toggle"
+          class:on={editing}
+          aria-pressed={editing}
+          title={editing ? '편집 끝내기' : '주제 편집'}
+          onclick={() => (editing = !editing)}
+        >
+          {editing ? '완료' : '주제 편집'}
+        </button>
+      </div>
     </div>
 
     <QuickAdd
       bind:this={quickAdd}
       categories={sorted}
       bind:categoryId
+      bind:openSheet
       now={store.now}
       onAdd={addTask}
     />
@@ -222,16 +410,20 @@
       categories={sorted}
       now={store.now}
       {reducedMotion}
-      onToggle={completeTask}
+      budget={columnBudget}
+      zoom={view.zoom}
+      onToggle={onComplete}
     />
 
-    {#if undoable}
+    {#if toast}
       <div class="undo">
-        <span class="done-title">완료 · {undoable.title}</span>
-        <button onclick={undoComplete}>되돌리기</button>
+        <span class="done-title">완료 · {toast.title}</span>
+        <button onclick={() => void undoComplete()}>되돌리기 <kbd>Ctrl+Z</kbd></button>
       </div>
     {/if}
 
+    <!-- 열린 팝오버가 창 밖으로 잘리지 않도록 잡아 두는 자리 -->
+    <div class="reserve" bind:this={spacer} style:height="{reserve}px" aria-hidden="true"></div>
   </div>
 </main>
 
@@ -293,8 +485,14 @@
 
   /* 눈에 띄어야 합니다. 주제가 하드코딩처럼 보이면 사용자는 자기 용도로
      바꿀 수 있다는 걸 아예 모르고 지나갑니다. */
-  .edit-toggle {
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin-left: auto;
+  }
+
+  .edit-toggle {
     font: inherit;
     font-size: 12px;
     font-weight: 600;
@@ -318,6 +516,54 @@
     background: rgba(90, 80, 190, 0.28);
   }
 
+
+  /* 패널의 flex gap이 빈 자리에도 붙으므로 그만큼 되돌립니다.
+     자리를 잡지 않은 평소에 14px이 그냥 낭비되면 안 됩니다. */
+  .reserve {
+    flex: none;
+    margin-top: -14px;
+  }
+
+  /* 편집 중에만 드러납니다. 평소 위젯에는 조작부가 없어야 합니다 */
+  .zoom {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .zoom button {
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 7px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .zoom button:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .zoom button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .pct {
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.6);
+    min-width: 34px;
+    text-align: center;
+  }
 
   .undo {
     display: flex;
@@ -354,6 +600,16 @@
 
   .undo button:hover {
     background: rgba(90, 80, 190, 0.5);
+  }
+
+  /* 팝업은 7초 뒤 사라지지만 Ctrl+Z는 계속 듣습니다.
+     그 사실을 알 방법이 여기 적어두는 것 말고는 없습니다. */
+  .undo kbd {
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.65;
+    margin-left: 3px;
   }
 
   .dragbar {

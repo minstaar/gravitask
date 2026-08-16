@@ -7,6 +7,9 @@ import type { NewTask, Task, TaskSource } from '../types';
  * 실제 저장 위치는 persist.ts가 정합니다. 설치된 앱에서는 앱 데이터 폴더의
  * JSON 파일, 브라우저 개발 중에는 localStorage입니다. 이 클래스는 어느 쪽인지
  * 알 필요가 없습니다.
+ *
+ * 여기에는 살아 있는 할 일만 있습니다. 완료한 것은 store가 archive.ts로
+ * 옮기므로, 이 목록의 completedAt은 언제나 null입니다.
  */
 
 const KEY = 'reminder-widget:tasks:v1';
@@ -57,6 +60,14 @@ export class LocalSource implements TaskSource {
 
   async remove(id: string): Promise<void> {
     const tasks = await this.#read();
+    if (!tasks.some((t) => t.id === id)) return;
     await this.#write(tasks.filter((t) => t.id !== id));
+  }
+
+  /** 되돌리기용. 원래 id를 그대로 지킨 채 도로 넣습니다 */
+  async insert(task: Task): Promise<void> {
+    const tasks = await this.#read();
+    if (tasks.some((t) => t.id === task.id)) return;
+    await this.#write([...tasks, task]);
   }
 }

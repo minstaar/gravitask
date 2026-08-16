@@ -1,7 +1,8 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { theme } from '../theme';
   import { computeAxis } from '../layout';
   import type { Category, Task } from '../types';
+  import type { Zone } from '../urgency';
   import TaskCard from './TaskCard.svelte';
 
   let {
@@ -9,16 +10,22 @@
     categories,
     now,
     reducedMotion = false,
+    budget,
+    zoom = 1,
     onToggle,
   }: {
     tasks: Task[];
     categories: Category[];
     now: number;
     reducedMotion?: boolean;
+    /** 기둥이 쓸 수 있는 최대 높이(px). 화면 크기에서 옵니다 */
+    budget?: number;
+    /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
+    zoom?: number;
     onToggle: (t: Task) => void;
   } = $props();
 
-  const axis = $derived(computeAxis(tasks, categories, now, { reducedMotion }));
+  const axis = $derived(computeAxis(tasks, categories, now, { reducedMotion, budget }));
   const L = theme.layout;
 
   /**
@@ -37,6 +44,144 @@
   const width = $derived(
     L.gutter + categories.length * laneW + Math.max(0, categories.length - 1) * L.laneGap
   );
+
+  /**
+   * 구역을 끌어 본 거리.
+   *
+   * 지남과 대기는 레인마다 따로입니다 — 높이가 순서(몇 번째)를 뜻할 뿐이라
+   * 레인끼리 맞춰 둘 이유가 없습니다.
+   *
+   * 활주로는 하나를 모든 레인이 같이 씁니다. 여기서 높이는 순서가 아니라
+   * 실제 시각이라, 레인마다 따로 밀면 "같은 높이 = 같은 시간"이 깨져 이 위젯의
+   * 전제가 무너집니다. 같이 밀면 보이는 시간 창이 옮겨질 뿐 비교는 그대로입니다.
+   */
+  const RUNWAY = 'runway';
+  let pan = $state<Record<string, number>>({});
+
+  const keyOf = (laneId: string, zone: Zone) => (zone === 'runway' ? RUNWAY : `${laneId}|${zone}`);
+
+  const viewportOf = (zone: Zone) =>
+    zone === 'overdue' ? axis.overdueHeight : zone === 'runway' ? axis.runwayHeight : axis.queueHeight;
+
+  const contentOf = (laneIndex: number, zone: Zone) =>
+    zone === 'overdue'
+      ? axis.lanes[laneIndex].content.overdue
+      : zone === 'runway'
+        ? axis.runwayContent
+        : axis.lanes[laneIndex].content.queue;
+
+  const rangeOf = (laneIndex: number, zone: Zone) =>
+    Math.max(0, contentOf(laneIndex, zone) - viewportOf(zone));
+
+  const panOf = (laneId: string, laneIndex: number, zone: Zone) =>
+    Math.min(pan[keyOf(laneId, zone)] ?? 0, rangeOf(laneIndex, zone));
+
+  /**
+   * 할 일이 줄면 끌 수 있는 범위도 줄어듭니다. 그대로 두면 빈 곳을 보고 있게
+   * 되므로 범위 안으로 되돌립니다.
+   */
+  $effect(() => {
+    const next: Record<string, number> = {};
+    let changed = false;
+    for (const [k, v] of Object.entries(pan)) {
+      let limit = 0;
+      if (k === RUNWAY) limit = Math.max(0, axis.runwayContent - axis.runwayHeight);
+      else {
+        const [laneId, zone] = k.split('|') as [string, Zone];
+        const i = categories.findIndex((c) => c.id === laneId);
+        if (i >= 0) limit = rangeOf(i, zone);
+      }
+      const clamped = Math.min(v, limit);
+      if (clamped > 0) next[k] = clamped;
+      if (clamped !== v) changed = true;
+    }
+    if (changed) pan = next;
+  });
+
+  /** 활주로는 offset이 하나뿐이라 가장자리 그늘도 레인마다가 아니라 한 번만 그립니다 */
+  const runwayRange = $derived(Math.max(0, axis.runwayContent - axis.runwayHeight));
+  const runwayPan = $derived(Math.min(pan[RUNWAY] ?? 0, runwayRange));
+
+  /* ---------- 끌기 ---------- */
+
+  let dragging = $state<string | null>(null);
+
+  /**
+   * 4px은 움직여야 끄는 것으로 봅니다.
+   *
+   * 카드마다 완료 버튼이 있어서, 누르는 손이 조금 흔들렸다고 화면이 밀리면
+   * 체크가 불안해집니다. 반대로 정말 끌었다면 그 끝의 클릭은 삼켜야 합니다 —
+   * 손을 떼는 위치에 있던 카드가 완료되면 그게 더 나쁩니다.
+   */
+  const DRAG_THRESHOLD = 4;
+
+  function startPan(e: PointerEvent, laneId: string, laneIndex: number, zone: Zone) {
+    if (e.button !== 0) return;
+    const limit = rangeOf(laneIndex, zone);
+    if (limit <= 0) return;
+
+    const key = keyOf(laneId, zone);
+    const startY = e.clientY;
+    const startPan = pan[key] ?? 0;
+    let moved = false;
+
+    const onMove = (ev: PointerEvent) => {
+      // clientY는 배율이 곱해진 화면 픽셀인데 pan은 배율 안쪽의 CSS 픽셀입니다
+      const delta = (ev.clientY - startY) / (zoom || 1);
+      if (!moved && Math.abs(delta) < DRAG_THRESHOLD) return;
+      moved = true;
+      dragging = key;
+      pan = { ...pan, [key]: Math.max(0, Math.min(limit, startPan + delta)) };
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      dragging = null;
+      if (moved) {
+        window.addEventListener('click', (ev) => ev.stopPropagation(), {
+          capture: true,
+          once: true,
+        });
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  function wheelPan(e: WheelEvent, laneId: string, laneIndex: number, zone: Zone) {
+    if (e.ctrlKey || e.metaKey) return; // 배율 조작이라 여기서 가로채면 안 됩니다
+    const limit = rangeOf(laneIndex, zone);
+    if (limit <= 0) return;
+    e.preventDefault();
+    const key = keyOf(laneId, zone);
+    pan = { ...pan, [key]: Math.max(0, Math.min(limit, (pan[key] ?? 0) - e.deltaY)) };
+  }
+
+  /* ---------- 눈금 ---------- */
+
+  /**
+   * 눈금은 활주로를 끈 만큼 같이 움직입니다.
+   *
+   * 눈금이 제자리에 남으면 카드와 어긋나 거짓말을 하게 됩니다. 창 밖으로 나간
+   * 눈금은 그리지 않습니다.
+   */
+  const ticks = $derived.by(() => {
+    if (axis.runwayContent <= L.runwayCollapsed) return [];
+    const offset = pan[RUNWAY] ?? 0;
+    return L.runwayTicks
+      .map((f) => {
+        const h = L.runwayHours * f;
+        const local = axis.runwayFloor + f * axis.runwayTravel + L.cardHeight / 2 - offset;
+        return { label: `${Math.round(h)}h`, y: axis.deadlineY + local, local };
+      })
+      .filter((t) => t.local > 6 && t.local < axis.runwayHeight - 6);
+  });
+
+  const zones: Zone[] = ['overdue', 'runway', 'queue'];
+  const bottomOf = (zone: Zone) =>
+    zone === 'overdue' ? 0 : zone === 'runway' ? axis.deadlineY : axis.boundaryY;
 </script>
 
 <!--
@@ -68,7 +213,7 @@
     {#each axis.lanes as lane (lane.category.id)}
       <span class="lane-name">
         {lane.category.name}
-        {#if lane.hiddenQueue > 0}<em>외 {lane.hiddenQueue}</em>{/if}
+        {#if lane.upcoming > 0}<em title="남은 할 일">{lane.upcoming}</em>{/if}
       </span>
     {/each}
   </header>
@@ -78,7 +223,7 @@
     <div class="runway" style:bottom="{axis.deadlineY}px" style:height="{axis.runwayHeight}px"></div>
     <div class="axis-line"></div>
 
-    {#each axis.ticks as tick (tick.label)}
+    {#each ticks as tick (tick.label)}
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
@@ -88,21 +233,56 @@
 
     <!-- 레인. 뼈대를 공유하므로 같은 높이는 모든 레인에서 같은 뜻입니다 -->
     <div class="lanes">
-      {#each axis.lanes as lane (lane.category.id)}
+      {#each axis.lanes as lane, li (lane.category.id)}
         <div class="lane">
-          {#each lane.placed as p (p.task.id)}
-            <TaskCard
-              task={p.task}
-              visual={p.visual}
-              targetY={p.y}
-              remaining={p.remaining}
-              {reducedMotion}
-              {onToggle}
-            />
+          {#each zones as zone (zone)}
+            {@const range = rangeOf(li, zone)}
+            {@const offset = panOf(lane.category.id, li, zone)}
+            {@const height = viewportOf(zone)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="zone"
+              class:pannable={range > 0}
+              class:dragging={dragging === keyOf(lane.category.id, zone)}
+              style:bottom="{bottomOf(zone)}px"
+              style:height="{height}px"
+              onpointerdown={(e) => startPan(e, lane.category.id, li, zone)}
+              onwheel={(e) => wheelPan(e, lane.category.id, li, zone)}
+            >
+              <div class="zone-content" style:transform="translateY({offset}px)">
+                {#each lane.placed.filter((p) => p.zone === zone) as p (p.task.id)}
+                  <TaskCard
+                    task={p.task}
+                    visual={p.visual}
+                    targetY={p.y}
+                    remaining={p.remaining}
+                    {reducedMotion}
+                    {onToggle}
+                  />
+                {/each}
+              </div>
+
+              <!-- 가장자리 그늘. 스크롤바 없이 "더 있다"를 알리는 유일한 신호입니다.
+                   활주로는 offset을 모든 레인이 공유하므로 여기서 그리지 않습니다 —
+                   레인마다 그리면 레인 폭만큼 끊긴 띠가 7개 생기고, 그 사이 틈이
+                   주제를 가르는 선처럼 보입니다. -->
+              {#if zone !== 'runway'}
+                {#if offset > 0.5}<div class="fade down"></div>{/if}
+                {#if offset < range - 0.5}<div class="fade up"></div>{/if}
+              {/if}
+            </div>
           {/each}
         </div>
       {/each}
     </div>
+
+    <!-- 활주로의 가장자리 그늘. 레인을 가로질러 한 번만 그립니다 -->
+    {#if runwayPan > 0.5}
+      <div class="fade down wide" style:bottom="{axis.deadlineY}px"></div>
+    {/if}
+    {#if runwayPan < runwayRange - 0.5}
+      <div class="fade up wide" style:bottom="{axis.boundaryY - 16}px"></div>
+    {/if}
 
     <!-- 마감선. 지난 항목이 있으면 그 위로 올라갑니다 -->
     <div class="deadline" style:bottom="{axis.deadlineY}px"><span>DUE</span></div>
@@ -177,6 +357,62 @@
     flex: none;
   }
 
+  /**
+   * 구역은 저마다 창입니다. 안의 카드가 창보다 높으면 끌어서 봅니다.
+   *
+   * overflow:hidden 대신 clip-path를 쓰는 이유는 가로는 열어 두어야 하기
+   * 때문입니다. 좁은 레인에서 잘린 제목을 호버로 펼쳐 보는 기능이 있는데,
+   * overflow:hidden은 세로만 자를 방법이 없어 그 펼침까지 같이 잘라 버립니다.
+   */
+  .zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    clip-path: inset(0 -420px 0 0);
+  }
+
+  .zone.pannable {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .zone.dragging {
+    cursor: grabbing;
+  }
+
+  .zone-content {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* 스크롤바를 두지 않기로 했으므로 "더 있다"는 이 그늘로만 전해집니다.
+     너무 옅으면 아무 말도 못 하고, 진하면 카드를 가립니다. */
+  .fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 16px;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .fade.up {
+    top: 0;
+    background: linear-gradient(to bottom, rgba(10, 11, 16, 0.75), transparent);
+  }
+
+  .fade.down {
+    bottom: 0;
+    background: linear-gradient(to top, rgba(10, 11, 16, 0.75), transparent);
+  }
+
+  /* 활주로용. 레인을 가로질러 한 줄로 이어져야 주제 사이 틈이 선처럼 보이지 않습니다 */
+  .fade.wide {
+    left: var(--gutter);
+    right: 0;
+    top: auto;
+  }
+
   .runway {
     position: absolute;
     left: var(--gutter);
@@ -212,10 +448,17 @@
     border-top: 1px dashed var(--boundary);
   }
 
+  /**
+   * 라벨은 경계선 아래(활주로 쪽)에 붙입니다.
+   *
+   * 위에 두면 대기 구역 첫 카드와 겹칩니다 — 카드는 경계선 위 10px에서
+   * 시작하는데 라벨은 위로 15px을 차지해서 5px이 물렸습니다. 아래쪽은
+   * 활주로 천장의 여백이라 비어 있습니다.
+   */
   .boundary span {
     position: absolute;
     right: 0;
-    top: -15px;
+    top: 2px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: var(--fs-axis);
     color: var(--text-muted);
@@ -228,6 +471,7 @@
     right: 0;
     height: 1px;
     background: linear-gradient(90deg, var(--deadline), transparent);
+    z-index: 6;
   }
 
   .deadline span {

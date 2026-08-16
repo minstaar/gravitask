@@ -9,7 +9,18 @@
  * 브라우저 개발 중에는 파일에 접근할 수 없으므로 localStorage를 씁니다.
  */
 
-const FILE = 'gravitask.json';
+/** 살아 있는 할 일과 설정 */
+export const MAIN_FILE = 'gravitask.json';
+
+/**
+ * 완료 기록.
+ *
+ * 파일을 나누는 이유는 쓰기 비용과 사고 반경입니다. 한 파일에 두면 오늘 할 일
+ * 하나를 체크할 때마다 지난 몇 년치 기록을 함께 직렬화해 다시 씁니다. 그리고
+ * 그 쓰기가 도중에 깨지면 살아 있는 할 일까지 같이 잃습니다. 나눠 두면 매일의
+ * 쓰기는 작게 유지되고, 기록이 깨져도 오늘 할 일은 무사합니다.
+ */
+export const ARCHIVE_FILE = 'gravitask-archive.json';
 
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -19,14 +30,18 @@ type TauriStore = {
   save(): Promise<void>;
 };
 
-let opening: Promise<TauriStore> | null = null;
+const opening = new Map<string, Promise<TauriStore>>();
 
-function openStore(): Promise<TauriStore> {
-  opening ??= import('@tauri-apps/plugin-store').then((m) => m.load(FILE, { autoSave: false }));
-  return opening as Promise<TauriStore>;
+function openStore(file: string): Promise<TauriStore> {
+  let p = opening.get(file);
+  if (!p) {
+    p = import('@tauri-apps/plugin-store').then((m) => m.load(file, { autoSave: false }));
+    opening.set(file, p);
+  }
+  return p;
 }
 
-export async function readJson<T>(key: string): Promise<T | null> {
+export async function readJson<T>(key: string, file = MAIN_FILE): Promise<T | null> {
   if (!inTauri) {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -40,19 +55,19 @@ export async function readJson<T>(key: string): Promise<T | null> {
   }
 
   try {
-    return (await (await openStore()).get<T>(key)) ?? null;
+    return (await (await openStore(file)).get<T>(key)) ?? null;
   } catch {
     return null;
   }
 }
 
-export async function writeJson(key: string, value: unknown): Promise<void> {
+export async function writeJson(key: string, value: unknown, file = MAIN_FILE): Promise<void> {
   if (!inTauri) {
     localStorage.setItem(key, JSON.stringify(value));
     return;
   }
 
-  const store = await openStore();
+  const store = await openStore(file);
   await store.set(key, value);
   // autoSave를 끄고 매번 명시적으로 씁니다. 할 일 하나를 체크하고 바로
   // 컴퓨터를 끄더라도 그 변경이 디스크에 남아 있어야 합니다.

@@ -22,6 +22,22 @@ export interface Task {
 export type NewTask = Omit<Task, 'id' | 'createdAt' | 'completedAt'>;
 
 /**
+ * 완료 기록.
+ *
+ * 완료한 할 일은 버리지 않고 별도 파일로 옮깁니다. 살아 있는 목록에 계속
+ * 쌓아두면 체크 한 번의 저장 비용이 지난 이력 전체에 비례하고, 그 쓰기가
+ * 깨졌을 때 잃는 것도 이력 전체입니다.
+ *
+ * 주제 이름은 완료 시점의 값을 복사해 둡니다. 기록은 그때 무슨 일이 있었는지
+ * 말해야 하는데, 주제를 지우거나 이름을 바꿨다고 지난 기록의 의미가 바뀌면
+ * 기록이 아닙니다. 이름을 잡아둘 수 있는 순간은 완료하는 그때뿐입니다.
+ */
+export interface ArchivedTask extends Task {
+  completedAt: number;
+  categoryName: string;
+}
+
+/**
  * 주제에는 색이 없습니다.
  *
  * 한때 주제마다 hue를 배정했지만, 카드가 이미 긴급도 색(청록→황량→적색)을
@@ -55,4 +71,12 @@ export interface TaskSource {
   add?(input: NewTask): Promise<Task>;
   update?(id: string, patch: Partial<Omit<Task, 'id'>>): Promise<void>;
   remove?(id: string): Promise<void>;
+
+  /**
+   * 이미 신원이 있는 할 일을 도로 넣습니다.
+   *
+   * add와 다릅니다 — add는 새 id를 발급하지만 insert는 원래 id를 지킵니다.
+   * 되돌리기가 id를 바꿔 버리면 되돌리기 스택이 가리키던 항목을 잃습니다.
+   */
+  insert?(task: Task): Promise<void>;
 }

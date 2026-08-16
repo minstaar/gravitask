@@ -8,8 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "test": "npm run test:parse && npm run test:format && npm run test:layout",
     "test:parse": "node ./src/lib/parseInput.test.ts",
-    "tauri": "tauri"
+    "test:format": "node ./src/lib/urgency.test.ts",
+    "tauri": "tauri",
+    "test:layout": "node ./src/lib/layout.test.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.2.0",

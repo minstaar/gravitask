@@ -8,11 +8,20 @@
     categoryId = $bindable(),
     now,
     onAdd,
+    openSheet = $bindable(null),
   }: {
     categories: Category[];
     categoryId: string;
     now: number;
     onAdd: (t: NewTask) => void;
+    /**
+     * 지금 열려 있는 팝오버. 셋 중 하나만 열리므로 한 칸이면 충분합니다.
+     *
+     * 팝오버는 position:absolute라 패널 높이에 잡히지 않고, 창이 패널 크기를
+     * 따라가므로 튀어나온 부분이 창 밖으로 잘립니다. 부모가 그만큼 자리를
+     * 잡아둘 수 있도록 실제 요소를 넘깁니다.
+     */
+    openSheet?: HTMLElement | null;
   } = $props();
 
   let text = $state('');
@@ -156,7 +165,11 @@
         class="trigger"
         aria-haspopup="listbox"
         aria-expanded={listOpen}
-        onclick={() => (listOpen = !listOpen)}
+        onclick={() => {
+          listOpen = !listOpen;
+          dateOpen = false;
+          timeOpen = false;
+        }}
       >
         {selected?.name ?? '주제'}
         <span class="caret" class:up={listOpen}>▾</span>
@@ -168,6 +181,7 @@
           class="sheet"
           role="listbox"
           tabindex="-1"
+          bind:this={openSheet}
           onmouseleave={() => (listOpen = false)}
         >
           {#each categories as c (c.id)}
@@ -226,7 +240,7 @@
       </button>
 
       {#if dateOpen}
-        <div class="sheet cal" role="dialog" aria-label="마감 날짜 고르기">
+        <div class="sheet cal" role="dialog" aria-label="마감 날짜 고르기" bind:this={openSheet}>
           <div class="quick">
             <button type="button" onclick={() => shiftDays(0)}>오늘</button>
             <button type="button" onclick={() => shiftDays(1)}>내일</button>
@@ -281,7 +295,7 @@
       </button>
 
       {#if timeOpen}
-        <div class="sheet times" role="dialog" aria-label="마감 시각 고르기">
+        <div class="sheet times" role="dialog" aria-label="마감 시각 고르기" bind:this={openSheet}>
           <div class="quick">
             {#each QUICK_TIMES as t (t)}
               <button type="button" onclick={() => pickTime(t)}>{t}</button>

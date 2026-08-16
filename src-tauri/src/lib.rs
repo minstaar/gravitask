@@ -91,6 +91,28 @@ fn spawn_desktop_parker(app: &AppHandle, state: Arc<WidgetState>) {
 #[cfg(not(windows))]
 fn spawn_desktop_parker(_app: &AppHandle, _state: Arc<WidgetState>) {}
 
+/// 창은 숨은 채로 뜨고, 프런트가 내용에 맞춰 크기를 잡은 뒤 스스로 보여 줍니다.
+///
+/// 그런데 프런트가 그 전에 죽으면 창이 영영 안 보입니다. 트레이 메뉴로 꺼낼
+/// 수는 있지만, 그걸 알아내야 하는 건 사용자 사정이 아닙니다. 그래서 시간이
+/// 지나도 여전히 숨어 있으면 여기서 대신 보여 줍니다 — 잘려 보이는 편이
+/// 안 보이는 것보다 낫습니다.
+fn spawn_reveal_fallback(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Some(window) = inner.get_webview_window("main") {
+                if !window.is_visible().unwrap_or(true) {
+                    log::warn!("프런트가 창을 띄우지 못해 대신 보여 줍니다");
+                    let _ = window.show();
+                }
+            }
+        });
+    });
+}
+
 /// 새 버전이 있으면 트레이 메뉴에 알립니다.
 ///
 /// 찾자마자 받아서 설치하지는 않습니다. 설치는 앱 재시작을 뜻하는데, 할 일을
@@ -322,6 +344,7 @@ pub fn run() {
             }
 
             spawn_desktop_parker(app.handle(), state);
+            spawn_reveal_fallback(app.handle());
 
             if let Ok(shortcut) = QUICK_ADD.parse::<Shortcut>() {
                 if let Err(err) = app.global_shortcut().register(shortcut) {

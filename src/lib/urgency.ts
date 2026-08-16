@@ -6,7 +6,9 @@
  * 빨강" 같은 판단을 하기 시작하면 일관성이 무너집니다.
  */
 
-import { theme, type RampStep, type Theme } from './theme';
+// 확장자를 붙입니다. 테스트를 번들러 없이 node로 바로 돌리기 때문에
+// (package.json의 test:format) 해석 규칙이 ESM 그대로여야 합니다.
+import { theme, type RampStep, type Theme } from './theme.ts';
 
 export const MS_HOUR = 3_600_000;
 
@@ -94,30 +96,54 @@ export function visualFor(
 /* ---------- 표기법 ---------- */
 
 /**
- * 급할수록 정확한 정보를 줍니다. 대기 구역은 상대 표기로 충분하지만
- * 활주로는 시간 단위, 1시간 이내면 절대 시각을 보여줍니다.
+ * `2d 12h` 꼴로 줄입니다.
+ *
+ * 버림으로 통일합니다. 반올림을 섞으면 30초 틱마다 경계에서 숫자가 오르내리고,
+ * 주변시에 걸리는 움직임은 이 위젯이 가장 아껴 써야 하는 자원입니다.
+ *
+ * 일주일 밖에서는 시간 단위를 버립니다. 12일 뒤 일의 7시간을 행동에 쓰는
+ * 사람은 없으므로, 그 자리는 정보가 아니라 잡음입니다.
+ */
+const DAY_ONLY_FROM = 7;
+
+function compact(hours: number): string {
+  const total = Math.max(0, Math.floor(hours));
+  const d = Math.floor(total / 24);
+  const h = total % 24;
+  if (d === 0) return `${h}h`;
+  if (d >= DAY_ONLY_FROM || h === 0) return `${d}d`;
+  return `${d}d ${h}h`;
+}
+
+/**
+ * 급할수록 정확한 정보를 줍니다.
+ *
+ * 고정폭 라틴 문자는 이 위젯에서 시간 축의 언어입니다 — 눈금이 12h, 경계선이
+ * 24H, 마감선이 DUE입니다. 남은 시간도 같은 채널에 둡니다. `2.5일`은 0.5일을
+ * 12시간으로 환산해야 읽히지만 `2d 12h`는 그대로 읽힙니다.
+ *
+ * 남음에는 접미사를 붙이지 않습니다. 남은 시간이 이 위젯의 기본 관심사라
+ * 카드마다 같은 두 글자가 반복될 뿐이고, 그 폭은 좁은 레인에서 제목이 써야
+ * 할 자리입니다. 지남은 예외라서 글로도 적습니다 — 색과 사선 패턴에만
+ * 맡기면 색으로 상태를 나르는 셈이 됩니다.
  */
 export function formatRemaining(due: number, now: number, zone: Zone): string {
   const h = hoursUntil(due, now);
 
   if (zone === 'overdue') {
     const past = -h;
-    if (past < 1) return `${Math.round(past * 60)}분 지남`;
-    if (past < 24) return `${Math.floor(past)}시간 지남`;
-    return `${Math.floor(past / 24)}일 지남`;
+    if (past < 1 / 60) return '방금 지남';
+    if (past < 1) return `${Math.floor(past * 60)}분 지남`;
+    return `${compact(past)} 지남`;
   }
 
-  if (zone === 'runway') {
-    if (h < 1) {
-      const d = new Date(due);
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}까지`;
-    }
-    return `${Math.floor(h)}시간 남음`;
+  // 한 시간 안쪽에서는 '몇 분 남았나'보다 '몇 시까지'가 행동에 가깝습니다.
+  if (h < 1) {
+    const d = new Date(due);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}까지`;
   }
 
-  const days = h / 24;
-  if (days < 10) return `${days.toFixed(1)}일 남음`;
-  return `${Math.round(days)}일 남음`;
+  return compact(h);
 }
 
 /* ---------- 색 유틸 ---------- */

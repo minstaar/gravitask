@@ -19,13 +19,10 @@
   } = $props();
 
   // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
+  // tasks에는 살아 있는 할 일만 들어옵니다 — 완료한 것은 기록으로 옮겨 갔고,
+  // 기록에는 주제 이름이 함께 있어서 주제를 지워도 읽을 수 있습니다.
   const openCount = $derived(
-    new Map(
-      categories.map((c) => [
-        c.id,
-        tasks.filter((t) => t.categoryId === c.id && t.completedAt === null).length,
-      ])
-    )
+    new Map(categories.map((c) => [c.id, tasks.filter((t) => t.categoryId === c.id).length]))
   );
 </script>
 
