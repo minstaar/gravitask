@@ -31,7 +31,12 @@ export interface Theme {
     cardGap: number;
     minQueueHeight: number;
     floor: number;
-    /** 경계선과 대기 구역 첫 카드 사이 간격 */
+    /**
+     * 경계선과 대기 구역 첫 카드 사이 간격.
+     *
+     * 24H 라벨이 경계선 위에 앉으므로 그만큼은 비워 둬야 합니다. 예전에 10px일
+     * 때 라벨과 카드가 5px 겹쳤습니다.
+     */
     queueTop: number;
     /**
      * 기둥이 화면 높이에서 차지할 수 있는 최대 비율.

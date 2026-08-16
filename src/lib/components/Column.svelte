@@ -66,9 +66,6 @@
 
   const axis = $derived(computeAxis(tasks, visible, now, { reducedMotion, budget }));
 
-  function turn(delta: number) {
-    pageWanted = Math.max(0, Math.min(pages.length - 1, page + delta));
-  }
 
   /**
    * 레인 폭은 주제가 늘면 줄어듭니다.
@@ -257,22 +254,24 @@
   style:--lane-gap="{L.laneGap}px"
   style:--content-w="{width}px"
 >
+  <!--
+    쪽 번호를 직접 누릅니다. 화살표로 한 칸씩 넘기게 하면 3쪽으로 가는 데 두 번
+    눌러야 하고, 무엇보다 과녁이 너무 작습니다.
+  -->
   {#if pages.length > 1}
     <div class="pager" style:width="{width}px">
-      <button aria-label="이전 주제" disabled={page === 0} onclick={() => turn(-1)}>‹</button>
-      <span class="dots">
-        {#each pages as group, i (i)}
-          <span
-            class="dot"
-            class:on={i === page}
-            class:urgent={urgentPages[i] && i !== page}
-            title={group.map((c) => c.name).join(', ')}
-          ></span>
-        {/each}
-      </span>
-      <button aria-label="다음 주제" disabled={page === pages.length - 1} onclick={() => turn(1)}
-        >›</button
-      >
+      {#each pages as group, i (i)}
+        <button
+          class="page"
+          class:on={i === page}
+          class:urgent={urgentPages[i] && i !== page}
+          aria-current={i === page ? 'page' : undefined}
+          title={group.map((c) => c.name).join(', ')}
+          onclick={() => (pageWanted = i)}
+        >
+          {i + 1}
+        </button>
+      {/each}
     </div>
   {/if}
 
@@ -294,13 +293,8 @@
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
-    <!--
-      활주로가 접혀 있으면 경계선 라벨을 뺍니다. 두 선 사이가 26px뿐이라
-      24H와 DUE가 서로 겹치는데, 접힌 활주로 자체가 이미 "오늘은 급한 게 없다"고
-      말하고 있어서 라벨이 보태는 것이 없습니다.
-    -->
     <div class="boundary" style:bottom="{axis.boundaryY}px">
-      {#if axis.runwayHeight > L.runwayCollapsed}<span>{L.runwayHours}H</span>{/if}
+      <span>{L.runwayHours}H</span>
     </div>
 
     <!-- 레인. 뼈대를 공유하므로 같은 높이는 모든 레인에서 같은 뜻입니다 -->
@@ -391,55 +385,53 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 4px;
+    margin-bottom: 8px;
   }
 
-  .pager button {
-    font: inherit;
-    font-size: 13px;
+  .page {
+    position: relative;
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: var(--fs-meta);
+    font-variant-numeric: tabular-nums;
     line-height: 1;
     color: var(--text-muted);
-    background: transparent;
-    border: none;
-    padding: 2px 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
     cursor: pointer;
   }
 
-  .pager button:hover:not(:disabled) {
+  .page:hover {
     color: var(--text);
+    background: rgba(255, 255, 255, 0.14);
   }
 
-  .pager button:disabled {
-    opacity: 0.25;
+  .page.on {
+    color: var(--text);
+    background: rgba(90, 80, 190, 0.32);
+    border-color: rgba(160, 150, 255, 0.5);
     cursor: default;
   }
 
-  .dots {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.22);
-  }
-
-  .dot.on {
-    background: var(--text);
-  }
-
   /**
-   * 안 보이는 페이지에 오늘 마감이나 밀린 일이 있으면 점에 불이 들어옵니다.
+   * 안 보이는 쪽에 오늘 마감이나 밀린 일이 있으면 번호 위에 불이 들어옵니다.
    *
    * 이게 없으면 페이지를 나눈 대가로 위젯이 본업을 잃습니다 — 흘끗 보고 아는
    * 물건인데 절반이 숨어 버리니까요. 무엇이 급한지까지는 말하지 않습니다.
    * 넘겨볼 이유가 있다는 것만 알리면 충분합니다.
    */
-  .dot.urgent {
+  .page.urgent::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
     background: var(--deadline);
     box-shadow: 0 0 5px var(--deadline);
   }
@@ -578,16 +570,17 @@
   }
 
   /**
-   * 라벨은 경계선 아래(활주로 쪽)에 붙입니다.
+   * 라벨은 경계선 위에 앉습니다. 눈금 라벨들과 같은 높이 감각을 씁니다.
    *
-   * 위에 두면 대기 구역 첫 카드와 겹칩니다 — 카드는 경계선 위 10px에서
-   * 시작하는데 라벨은 위로 15px을 차지해서 5px이 물렸습니다. 아래쪽은
-   * 활주로 천장의 여백이라 비어 있습니다.
+   * 그만큼의 자리는 theme의 queueTop이 비워 둡니다. 그 값이 10px이던 시절에는
+   * 대기 구역 첫 카드와 5px 겹쳤는데, 그때 라벨을 아래로 내린 건 잘못된
+   * 해법이었습니다 — 겹친 원인은 라벨의 위치가 아니라 카드가 너무 낮게
+   * 시작하는 것이었고, 아래로 내리면 이번엔 활주로가 접혔을 때 DUE와 겹쳤습니다.
    */
   .boundary span {
     position: absolute;
     right: 0;
-    top: 2px;
+    top: -15px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: var(--fs-axis);
     color: var(--text-muted);

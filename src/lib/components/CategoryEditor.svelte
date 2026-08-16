@@ -91,7 +91,7 @@
     제목이 거의 남지 않습니다.
   -->
   <div class="row">
-    <span class="label">한 번에 보기</span>
+    <span class="label">한 화면에 표시할 주제 수</span>
     <button
       class="nudge"
       aria-label="적게 보기"
