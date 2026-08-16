@@ -12,6 +12,7 @@
     removeCategory,
     renameCategory,
     markSeeded,
+    setPerPage,
     setZoom,
     startClock,
     store,
@@ -22,6 +23,7 @@
     ZOOM_STEPS,
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
+  import { maxTopicsPerPage } from './lib/layout';
   import { theme } from './lib/theme';
   import type { NewTask, Task } from './lib/types';
 
@@ -398,10 +400,13 @@
       <CategoryEditor
         categories={sorted}
         tasks={store.tasks}
+        perPage={view.perPage}
+        maxPerPage={maxTopicsPerPage()}
         onAdd={() => addCategory()}
         onRename={renameCategory}
         onMove={moveCategory}
         onRemove={removeCategory}
+        onPerPage={setPerPage}
       />
     {/if}
 
@@ -412,6 +417,7 @@
       {reducedMotion}
       budget={columnBudget}
       zoom={view.zoom}
+      perPage={view.perPage}
       onToggle={onComplete}
     />
 

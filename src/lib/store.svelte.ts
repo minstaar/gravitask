@@ -1,5 +1,7 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { migrateFromLocalStorage, readJson, writeJson } from './persist';
+import { maxTopicsPerPage } from './layout';
+import { theme } from './theme';
 import { LocalSource } from './sources/LocalSource';
 import type { Category, NewTask, Task, TaskSource } from './types';
 
@@ -7,6 +9,7 @@ const CAT_KEY = 'reminder-widget:categories:v1';
 const TASK_KEY = 'reminder-widget:tasks:v1';
 const SEED_KEY = 'reminder-widget:seeded';
 const ZOOM_KEY = 'reminder-widget:zoom:v1';
+const PER_PAGE_KEY = 'reminder-widget:perPage:v1';
 
 const SEED: Category[] = [
   { id: 'study', name: '학업', order: 0 },
@@ -54,7 +57,7 @@ export const undo = $state({ stack: [] as UndoEntry[] });
  * 둘 다 시작할 때 한 번 할 일입니다 — refresh는 체크할 때마다 불립니다.
  */
 export async function init(): Promise<void> {
-  await migrateFromLocalStorage([TASK_KEY, CAT_KEY, SEED_KEY, ZOOM_KEY]);
+  await migrateFromLocalStorage([TASK_KEY, CAT_KEY, SEED_KEY, ZOOM_KEY, PER_PAGE_KEY]);
   await refresh();
   await drainCompleted();
   await pruneArchive(new Set(store.tasks.map((t) => t.id)));
@@ -62,6 +65,9 @@ export async function init(): Promise<void> {
   const savedZoom = await readJson<number>(ZOOM_KEY);
   if (savedZoom && ZOOM_STEPS.includes(savedZoom)) view.zoom = savedZoom;
   else setZoom(pickZoomForScreen());
+
+  const savedPerPage = await readJson<number>(PER_PAGE_KEY);
+  if (savedPerPage) view.perPage = Math.max(1, Math.min(maxTopicsPerPage(), savedPerPage));
 }
 
 /**
@@ -97,7 +103,19 @@ function pickZoomForScreen(): number {
  */
 export const ZOOM_STEPS: number[] = [0.75, 0.85, 1, 1.15, 1.3, 1.5];
 
-export const view = $state({ zoom: 1 });
+/**
+ * 배율과 '한 번에 보일 주제 수'를 함께 둡니다.
+ *
+ * 둘 다 "얼마나 보일까"라는 한 가지 질문에 대한 답이고, 데이터가 아니라 이
+ * 컴퓨터에서 보는 방식이라 같은 자리에 있는 게 맞습니다.
+ */
+export const view = $state({ zoom: 1, perPage: theme.layout.topicsPerPage });
+
+export function setPerPage(n: number): void {
+  const clamped = Math.max(1, Math.min(maxTopicsPerPage(), Math.round(n)));
+  view.perPage = clamped;
+  void writeJson(PER_PAGE_KEY, clamped);
+}
 
 export function setZoom(next: number): void {
   const z = ZOOM_STEPS.includes(next) ? next : 1;

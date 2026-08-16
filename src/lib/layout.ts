@@ -172,6 +172,18 @@ function allocate(need: number[], floor_: number[], budget: number): number[] {
   return out.map((v) => Math.floor(v));
 }
 
+/**
+ * 한 페이지에 넣을 수 있는 주제 수의 상한.
+ *
+ * maxWidth를 진짜 상한으로 만드는 값입니다. 예전에는 maxWidth가 있어도
+ * laneMin이 이겨서 주제가 늘수록 위젯이 옆으로 자랐습니다 — 7주제에 1166px.
+ * 폭을 붙들려면 레인 수를 붙드는 수밖에 없고, 나머지는 페이지를 넘겨 봅니다.
+ */
+export function maxTopicsPerPage(t: Theme = theme): number {
+  const L = t.layout;
+  return Math.max(1, Math.floor((L.maxWidth - L.gutter + L.laneGap) / (L.laneMin + L.laneGap)));
+}
+
 export function computeAxis(
   tasks: Task[],
   categories: Category[],

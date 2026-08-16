@@ -2,7 +2,7 @@
   import { theme } from '../theme';
   import { computeAxis } from '../layout';
   import type { Category, Task } from '../types';
-  import type { Zone } from '../urgency';
+  import { hoursUntil, type Zone } from '../urgency';
   import TaskCard from './TaskCard.svelte';
 
   let {
@@ -12,12 +12,15 @@
     reducedMotion = false,
     budget,
     zoom = 1,
+    perPage = 4,
     onToggle,
   }: {
     tasks: Task[];
     categories: Category[];
     now: number;
     reducedMotion?: boolean;
+    /** 한 번에 보여줄 주제 수 */
+    perPage?: number;
     /** 기둥이 쓸 수 있는 최대 높이(px). 화면 크기에서 옵니다 */
     budget?: number;
     /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
@@ -25,8 +28,47 @@
     onToggle: (t: Task) => void;
   } = $props();
 
-  const axis = $derived(computeAxis(tasks, categories, now, { reducedMotion, budget }));
   const L = theme.layout;
+
+  /**
+   * 주제가 많으면 페이지로 나눕니다.
+   *
+   * 주제 수만큼 옆으로 자라게 두면 7과목에 1166px까지 벌어집니다. 폭을 붙들려면
+   * 레인 수를 붙드는 수밖에 없습니다.
+   *
+   * 대신 안 보이는 주제의 급한 일까지 같이 숨으면 위젯이 본업을 잃습니다.
+   * 그래서 페이지 표시에 점을 찍어, 저쪽에 오늘 마감이나 밀린 일이 있다는
+   * 사실만은 넘겨보지 않아도 알 수 있게 합니다.
+   */
+  const pages = $derived.by(() => {
+    const size = Math.max(1, Math.min(perPage, categories.length || 1));
+    const out: Category[][] = [];
+    for (let i = 0; i < categories.length; i += size) out.push(categories.slice(i, i + size));
+    return out.length > 0 ? out : [[]];
+  });
+
+  let pageWanted = $state(0);
+  const page = $derived(Math.min(pageWanted, pages.length - 1));
+  const visible = $derived(pages[page] ?? []);
+
+  /** 그 페이지에 오늘 마감이거나 이미 지난 일이 있는가 */
+  const urgentPages = $derived(
+    pages.map((group) => {
+      const ids = new Set(group.map((c) => c.id));
+      return tasks.some(
+        (t) =>
+          t.completedAt === null &&
+          ids.has(t.categoryId) &&
+          hoursUntil(t.due, now) <= L.runwayHours
+      );
+    })
+  );
+
+  const axis = $derived(computeAxis(tasks, visible, now, { reducedMotion, budget }));
+
+  function turn(delta: number) {
+    pageWanted = Math.max(0, Math.min(pages.length - 1, page + delta));
+  }
 
   /**
    * 레인 폭은 주제가 늘면 줄어듭니다.
@@ -36,13 +78,13 @@
    * 않는 하한 아래로는 줄이지 않습니다. 좁아진 제목은 호버로 펼쳐 봅니다.
    */
   const laneW = $derived.by(() => {
-    const n = Math.max(1, categories.length);
+    const n = Math.max(1, visible.length);
     const available = L.maxWidth - L.gutter - (n - 1) * L.laneGap;
     return Math.max(L.laneMin, Math.min(L.laneWidth, Math.floor(available / n)));
   });
 
   const width = $derived(
-    L.gutter + categories.length * laneW + Math.max(0, categories.length - 1) * L.laneGap
+    L.gutter + visible.length * laneW + Math.max(0, visible.length - 1) * L.laneGap
   );
 
   /**
@@ -88,8 +130,14 @@
       if (k === RUNWAY) limit = Math.max(0, axis.runwayContent - axis.runwayHeight);
       else {
         const [laneId, zone] = k.split('|') as [string, Zone];
-        const i = categories.findIndex((c) => c.id === laneId);
-        if (i >= 0) limit = rangeOf(i, zone);
+        const i = visible.findIndex((c) => c.id === laneId);
+        if (i < 0) {
+          // 다른 페이지의 주제는 지금 잴 수 없습니다. 버리지 않고 그대로 둡니다 —
+          // 페이지를 돌아왔을 때 밀어둔 자리가 남아 있어야 합니다.
+          next[k] = v;
+          continue;
+        }
+        limit = rangeOf(i, zone);
       }
       const clamped = Math.min(v, limit);
       if (clamped > 0) next[k] = clamped;
@@ -209,6 +257,25 @@
   style:--lane-gap="{L.laneGap}px"
   style:--content-w="{width}px"
 >
+  {#if pages.length > 1}
+    <div class="pager" style:width="{width}px">
+      <button aria-label="이전 주제" disabled={page === 0} onclick={() => turn(-1)}>‹</button>
+      <span class="dots">
+        {#each pages as group, i (i)}
+          <span
+            class="dot"
+            class:on={i === page}
+            class:urgent={urgentPages[i] && i !== page}
+            title={group.map((c) => c.name).join(', ')}
+          ></span>
+        {/each}
+      </span>
+      <button aria-label="다음 주제" disabled={page === pages.length - 1} onclick={() => turn(1)}
+        >›</button
+      >
+    </div>
+  {/if}
+
   <header style:padding-left="{L.gutter}px">
     {#each axis.lanes as lane (lane.category.id)}
       <span class="lane-name">
@@ -227,8 +294,13 @@
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
+    <!--
+      활주로가 접혀 있으면 경계선 라벨을 뺍니다. 두 선 사이가 26px뿐이라
+      24H와 DUE가 서로 겹치는데, 접힌 활주로 자체가 이미 "오늘은 급한 게 없다"고
+      말하고 있어서 라벨이 보태는 것이 없습니다.
+    -->
     <div class="boundary" style:bottom="{axis.boundaryY}px">
-      <span>{L.runwayHours}H</span>
+      {#if axis.runwayHeight > L.runwayCollapsed}<span>{L.runwayHours}H</span>{/if}
     </div>
 
     <!-- 레인. 뼈대를 공유하므로 같은 높이는 모든 레인에서 같은 뜻입니다 -->
@@ -313,6 +385,63 @@
     gap: var(--lane-gap);
     margin-bottom: 10px;
     width: var(--content-w);
+  }
+
+  .pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .pager button {
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+
+  .pager button:hover:not(:disabled) {
+    color: var(--text);
+  }
+
+  .pager button:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .dots {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .dot.on {
+    background: var(--text);
+  }
+
+  /**
+   * 안 보이는 페이지에 오늘 마감이나 밀린 일이 있으면 점에 불이 들어옵니다.
+   *
+   * 이게 없으면 페이지를 나눈 대가로 위젯이 본업을 잃습니다 — 흘끗 보고 아는
+   * 물건인데 절반이 숨어 버리니까요. 무엇이 급한지까지는 말하지 않습니다.
+   * 넘겨볼 이유가 있다는 것만 알리면 충분합니다.
+   */
+  .dot.urgent {
+    background: var(--deadline);
+    box-shadow: 0 0 5px var(--deadline);
   }
 
   /* 주제에는 색을 쓰지 않습니다. 카드가 이미 긴급도 색을 쓰고 있어서

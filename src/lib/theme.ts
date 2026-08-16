@@ -46,6 +46,15 @@ export interface Theme {
     maxHeightFraction: number;
     /** 화면이 아무리 작아도 기둥이 이보다 짧아지지는 않습니다 */
     minColumnHeight: number;
+    /**
+     * 한 번에 보여줄 주제 수의 기본값. 사용자가 바꿀 수 있습니다.
+     *
+     * 주제가 늘 때마다 위젯이 옆으로 자라면 안 됩니다. maxWidth가 그걸 막는
+     * 값이었지만 실제로는 laneMin이 이겨서 상한 노릇을 못 했습니다 — 7주제면
+     * 1166px까지 벌어졌습니다. 폭을 고정하려면 레인 수를 고정하는 수밖에 없고,
+     * 나머지 주제는 페이지를 넘겨서 봅니다.
+     */
+    topicsPerPage: number;
     /** 레인 하나의 선호 폭. 주제가 적을 때 쓰는 값입니다 */
     laneWidth: number;
     /** 레인이 좁아질 수 있는 하한. 이보다 좁으면 제목이 거의 안 남습니다 */

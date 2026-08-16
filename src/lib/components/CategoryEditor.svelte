@@ -5,17 +5,25 @@
   let {
     categories,
     tasks,
+    perPage,
+    maxPerPage,
     onAdd,
     onRename,
     onMove,
     onRemove,
+    onPerPage,
   }: {
     categories: Category[];
     tasks: Task[];
+    /** 한 번에 보여줄 주제 수 */
+    perPage: number;
+    /** 폭 상한에 걸려 더는 늘릴 수 없는 지점 */
+    maxPerPage: number;
     onAdd: () => void;
     onRename: (id: string, name: string) => void;
     onMove: (id: string, delta: number) => void;
     onRemove: (id: string) => void;
+    onPerPage: (n: number) => void;
   } = $props();
 
   // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
@@ -76,6 +84,31 @@
   </ul>
 
   <button class="add" onclick={onAdd}>＋ 주제 추가</button>
+
+  <!--
+    주제가 늘 때마다 위젯이 옆으로 자라면 안 되므로, 한 번에 보여줄 수를 정하고
+    나머지는 페이지를 넘겨 봅니다. 상한은 폭 예산이 정합니다 — 그보다 더 넣으면
+    제목이 거의 남지 않습니다.
+  -->
+  <div class="row">
+    <span class="label">한 번에 보기</span>
+    <button
+      class="nudge"
+      aria-label="적게 보기"
+      disabled={perPage <= 1}
+      onclick={() => onPerPage(perPage - 1)}>−</button
+    >
+    <span class="count">{perPage}개</span>
+    <button
+      class="nudge"
+      aria-label="많이 보기"
+      disabled={perPage >= maxPerPage}
+      onclick={() => onPerPage(perPage + 1)}>＋</button
+    >
+    {#if categories.length > perPage}
+      <span class="note">{Math.ceil(categories.length / perPage)}쪽</span>
+    {/if}
+  </div>
 </section>
 
 <style>
@@ -112,6 +145,36 @@
     display: flex;
     align-items: center;
     gap: 7px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+  }
+
+  .label {
+    flex: 1;
+    font-size: var(--fs-meta);
+    color: var(--text-muted);
+  }
+
+  .count,
+  .note {
+    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+    font-size: var(--fs-meta);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    min-width: 28px;
+    text-align: center;
+  }
+
+  .note {
+    color: var(--text-muted);
+    min-width: 0;
+    margin-left: 2px;
   }
 
   .rename {
