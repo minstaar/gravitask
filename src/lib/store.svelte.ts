@@ -235,7 +235,25 @@ export function saveCategories(next: Category[]): void {
   void writeJson(CAT_KEY, next);
 }
 
-export function addCategory(name = '새 주제'): string {
+const NEW_TOPIC = '새 주제';
+
+/**
+ * 새 주제의 이름을 짓습니다.
+ *
+ * 지금 있는 '새 주제 N' 중 가장 큰 번호의 다음을 씁니다. 개수를 세면 안 됩니다 —
+ * 1·2·3에서 2를 지우고 추가하면 개수는 2라 '새 주제 3'이 나와 이미 있는 것과
+ * 겹칩니다. 남아 있는 번호만 보면 지운 순서와 무관하게 항상 새 이름이 나옵니다.
+ */
+function nextTopicName(): string {
+  const numbered = new RegExp(`^${NEW_TOPIC}\\s+(\\d+)$`);
+  const highest = store.categories.reduce((max, c) => {
+    const found = numbered.exec(c.name.trim());
+    return found ? Math.max(max, Number(found[1])) : max;
+  }, 0);
+  return `${NEW_TOPIC} ${highest + 1}`;
+}
+
+export function addCategory(name = nextTopicName()): string {
   const id = 'cat-' + Math.random().toString(36).slice(2, 8);
   const order = store.categories.reduce((m, c) => Math.max(m, c.order), -1) + 1;
   saveCategories([...store.categories, { id, name, order }]);

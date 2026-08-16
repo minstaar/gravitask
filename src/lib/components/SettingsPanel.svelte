@@ -219,51 +219,50 @@
           disabled={perPage >= maxPerPage}
           onclick={() => onPerPage(perPage + 1)}>＋</button
         >
-        {#if categories.length > perPage}
-          <span class="note">{Math.ceil(categories.length / perPage)}쪽</span>
-        {/if}
       </div>
 
       <h2 class="section">알림</h2>
 
-      <label class="check">
-        <input type="checkbox" checked={settings.notify} onchange={(e) => onSettings({ notify: e.currentTarget.checked })} />
-        <span>마감 알림 켜기</span>
-      </label>
-
-      <label class="check" class:off={!settings.notify}>
-        <input
-          type="checkbox"
-          disabled={!settings.notify}
-          checked={settings.notifyDayBefore}
-          onchange={(e) => onSettings({ notifyDayBefore: e.currentTarget.checked })}
-        />
-        <span>24시간 전</span>
-      </label>
-
-      <label class="check" class:off={!settings.notify}>
-        <input
-          type="checkbox"
-          disabled={!settings.notify}
-          checked={settings.notifyHourBefore}
-          onchange={(e) => onSettings({ notifyHourBefore: e.currentTarget.checked })}
-        />
-        <span>1시간 전</span>
-      </label>
-
       <!--
-        그냥 미루기만 하면 새벽 마감을 조용히 놓칩니다. 야간이 시작될 때
-        "오늘 밤 사이 마감 N건"을 한 번 알리고, 그 뒤로는 아침까지 조용합니다.
+        켜야 아래 항목이 나타납니다. 꺼진 채로 하위 항목을 흐리게 남겨 두면
+        만질 수 있는 것처럼 보이는데 실제로는 아무 효과가 없어서, 아예 감추는
+        편이 정직합니다.
       -->
-      <label class="check" class:off={!settings.notify}>
-        <input
-          type="checkbox"
-          disabled={!settings.notify}
-          checked={settings.quietNight}
-          onchange={(e) => onSettings({ quietNight: e.currentTarget.checked })}
-        />
-        <span>야간에는 모아서 아침에</span>
-      </label>
+      <div class="row">
+        <span class="label">마감 알림</span>
+        <button
+          class="toggle"
+          class:on={settings.notify}
+          role="switch"
+          aria-label="마감 알림"
+          aria-checked={settings.notify}
+          onclick={() => onSettings({ notify: !settings.notify })}
+        >
+          <span class="knob"></span>
+        </button>
+      </div>
+
+      {#if settings.notify}
+        {#each [
+          { key: 'notifyDayBefore' as const, label: '마감 24시간 전' },
+          { key: 'notifyHourBefore' as const, label: '마감 1시간 전' },
+          { key: 'nightAlerts' as const, label: '야간 알림 수신' },
+        ] as item (item.key)}
+          <div class="row sub">
+            <span class="label">{item.label}</span>
+            <button
+              class="toggle"
+              class:on={settings[item.key]}
+              role="switch"
+              aria-label={item.label}
+              aria-checked={settings[item.key]}
+              onclick={() => onSettings({ [item.key]: !settings[item.key] })}
+            >
+              <span class="knob"></span>
+            </button>
+          </div>
+        {/each}
+      {/if}
     </div>
 
     <!-- 스크롤바를 두지 않기로 했으므로 "더 있다"는 이 그늘로만 전해집니다 -->
@@ -363,28 +362,61 @@
     border-top: 1px solid rgba(255, 255, 255, 0.09);
   }
 
-  /* 알림 스위치들 */
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--fs-meta);
-    color: var(--text);
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .check.off {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .check input {
+  /**
+   * 온오프 스위치.
+   *
+   * 체크박스 대신 쓰는 이유는 오른쪽 끝에 정렬되기 때문입니다. 라벨은 왼쪽,
+   * 상태는 오른쪽 — 위의 배율·주제 수 행과 같은 축에 서서 눈이 한 줄로 훑힙니다.
+   */
+  .toggle {
     flex: none;
-    width: 14px;
-    height: 14px;
-    accent-color: #6a5fd0;
-    cursor: inherit;
+    width: 32px;
+    height: 18px;
+    padding: 0;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .toggle:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  .toggle.on {
+    background: rgba(90, 80, 190, 0.55);
+    border-color: rgba(160, 150, 255, 0.65);
+  }
+
+  .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.75);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .toggle.on .knob {
+    transform: translateX(14px);
+    background: #fff;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toggle,
+    .knob {
+      transition: none;
+    }
+  }
+
+  /* 하위 항목은 한 단 들여씁니다 — 무엇에 딸린 설정인지 줄만 봐도 읽힙니다 */
+  .row.sub .label {
+    padding-left: 12px;
+    color: var(--text-muted);
   }
 
   .label {
@@ -393,8 +425,7 @@
     color: var(--text-muted);
   }
 
-  .count,
-  .note {
+  .count {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: var(--fs-meta);
     font-variant-numeric: tabular-nums;
@@ -403,11 +434,6 @@
     text-align: center;
   }
 
-  .note {
-    color: var(--text-muted);
-    min-width: 0;
-    margin-left: 2px;
-  }
 
   .rename {
     flex: 1;

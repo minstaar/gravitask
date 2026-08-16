@@ -27,20 +27,20 @@ export interface Settings {
   /** 마감 1시간 전 */
   notifyHourBefore: boolean;
   /**
-   * 야간에는 알림을 미뤘다가 아침에 묶어서 보냅니다.
+   * 야간에도 알림을 받습니다.
    *
-   * 다만 그냥 미루기만 하면 새벽 3시 마감을 조용히 놓칩니다. 그래서 야간이
-   * 시작될 때 "오늘 밤 사이 마감 N건"을 한 번 알립니다 — 자기 전에 알 기회는
-   * 주고, 새벽에 깨우지는 않습니다.
+   * 끄면 야간 알림을 아침으로 미룹니다. 다만 그냥 미루기만 하면 새벽 3시
+   * 마감을 조용히 놓치므로, 야간이 시작될 때 "오늘 밤 사이 마감 N건"을 한 번
+   * 알립니다 — 자기 전에 알 기회는 주고, 새벽에 깨우지는 않습니다.
    */
-  quietNight: boolean;
+  nightAlerts: boolean;
 }
 
 export const DEFAULTS: Settings = {
   notify: true,
   notifyDayBefore: true,
   notifyHourBefore: true,
-  quietNight: true,
+  nightAlerts: true,
 };
 
 export async function loadSettings(): Promise<Settings> {

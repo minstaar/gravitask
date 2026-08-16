@@ -520,6 +520,42 @@
 
   /* 눈에 띄어야 합니다. 주제가 하드코딩처럼 보이면 사용자는 자기 용도로
      바꿀 수 있다는 걸 아예 모르고 지나갑니다. */
+  /* 패널의 flex gap이 빈 자리에도 붙으므로 그만큼 되돌립니다.
+     자리를 잡지 않은 평소에 14px이 그냥 낭비되면 안 됩니다. */
+  .reserve {
+    flex: none;
+    margin-top: -14px;
+  }
+
+  /**
+   * 오른쪽 끝에 붙습니다. 눈에 띄어야 합니다 — 주제가 하드코딩처럼 보이면
+   * 사용자는 자기 용도로 바꿀 수 있다는 걸 아예 모르고 지나갑니다.
+   */
+  .edit-toggle {
+    margin-left: auto;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+  }
+
+  .edit-toggle:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.45);
+  }
+
+  .edit-toggle.on {
+    color: #cfcbff;
+    border-color: rgba(160, 150, 255, 0.55);
+    background: rgba(90, 80, 190, 0.28);
+  }
+
   .undo {
     display: flex;
     align-items: center;
