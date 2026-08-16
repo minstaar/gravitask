@@ -43,9 +43,24 @@ export const DEFAULTS: Settings = {
   nightAlerts: true,
 };
 
+/**
+ * 아는 키만 골라 읽습니다.
+ *
+ * 통째로 펼치면 예전 이름이 계속 따라옵니다 — quietNight을 nightAlerts로
+ * 바꿨는데도 저장 파일에 quietNight이 남아 다음 저장 때 다시 쓰였습니다.
+ * 읽을 때 거르면 한 번 저장하는 것만으로 정리됩니다.
+ */
 export async function loadSettings(): Promise<Settings> {
   const saved = await readJson<Partial<Settings>>(KEY);
-  return { ...DEFAULTS, ...(saved ?? {}) };
+  const pick = <K extends keyof Settings>(key: K): Settings[K] =>
+    typeof saved?.[key] === 'boolean' ? (saved[key] as Settings[K]) : DEFAULTS[key];
+
+  return {
+    notify: pick('notify'),
+    notifyDayBefore: pick('notifyDayBefore'),
+    notifyHourBefore: pick('notifyHourBefore'),
+    nightAlerts: pick('nightAlerts'),
+  };
 }
 
 export async function saveSettings(next: Settings): Promise<void> {

@@ -407,8 +407,8 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 6px;
-    min-width: 22px;
-    height: 22px;
+    min-width: 26px;
+    height: 26px;
     padding: 0 5px;
     cursor: pointer;
   }

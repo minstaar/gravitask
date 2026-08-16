@@ -370,10 +370,10 @@
    */
   .toggle {
     flex: none;
-    width: 32px;
-    height: 18px;
+    width: 42px;
+    height: 24px;
     padding: 0;
-    border-radius: 9px;
+    border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(255, 255, 255, 0.08);
     cursor: pointer;
@@ -385,24 +385,26 @@
     border-color: rgba(255, 255, 255, 0.4);
   }
 
+  /* 켜짐이 확실히 켜져 보여야 합니다. 예전 색은 어두운 표면 위에서 꺼짐과
+     잘 구분되지 않아, 켜져 있는데도 꺼진 것으로 읽혔습니다. */
   .toggle.on {
-    background: rgba(90, 80, 190, 0.55);
-    border-color: rgba(160, 150, 255, 0.65);
+    background: #6a5fd0;
+    border-color: rgba(190, 182, 255, 0.85);
   }
 
   .knob {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.75);
     transition: transform 0.15s ease, background 0.15s ease;
   }
 
   .toggle.on .knob {
-    transform: translateX(14px);
+    transform: translateX(18px);
     background: #fff;
   }
 
@@ -448,6 +450,13 @@
     padding: 4px 8px;
   }
 
+  /**
+   * 클릭 과녁은 최소 26px입니다.
+   *
+   * ↑↓와 −＋가 21×19였는데, 데스크톱에서 24×24가 실질 하한입니다. 그보다 작으면
+   * 겨눴다고 생각한 곳과 실제로 눌리는 곳이 어긋나서, 눌렀는데 아무 일도 안
+   * 일어나는 일이 생깁니다. 글자는 그대로 두고 과녁만 키웁니다.
+   */
   .nudge,
   .danger,
   .add {
@@ -459,7 +468,16 @@
     border-radius: 7px;
     cursor: pointer;
     flex: none;
+    min-height: 26px;
     padding: 4px 8px;
+  }
+
+  .nudge {
+    min-width: 26px;
+  }
+
+  .add {
+    min-height: 30px;
   }
 
   .nudge {

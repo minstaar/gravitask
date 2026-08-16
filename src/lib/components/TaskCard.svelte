@@ -194,15 +194,29 @@
     margin-top: 1px;
   }
 
+  /**
+   * 이 앱에서 가장 자주 누르는 곳이라 과녁이 넉넉해야 합니다.
+   *
+   * 동그라미 자체는 작게 두되(카드 안에서 커지면 제목 자리를 먹습니다) 눌리는
+   * 범위를 여백으로 넓힙니다 — 보이는 크기와 닿는 크기는 같을 필요가 없습니다.
+   */
   .check {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
     border: 1.5px solid;
     background: transparent;
     cursor: pointer;
     padding: 0;
+    position: relative;
+  }
+
+  .check::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
   }
 
   .check:hover {
