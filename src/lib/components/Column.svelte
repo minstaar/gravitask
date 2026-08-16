@@ -289,13 +289,20 @@
     <div class="runway" style:bottom="{axis.deadlineY}px" style:height="{axis.runwayHeight}px"></div>
     <div class="axis-line"></div>
 
+    <!--
+      축 표기는 전부 왼쪽 여백에 모읍니다.
+      12h 눈금과 DUE·24H는 다 같은 종류 — 높이가 무슨 시각인지 말하는 값입니다.
+      한데 모으면 왼쪽은 축, 오른쪽은 내용으로 갈려서 읽기 쉽고, 라벨이 카드와
+      겹칠 일도 사라집니다.
+    -->
     {#each ticks as tick (tick.label)}
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
-    <div class="boundary" style:bottom="{axis.boundaryY}px">
-      <span>{L.runwayHours}H</span>
-    </div>
+    <span class="tick edge" style:bottom="{axis.boundaryY}px">{L.runwayHours}H</span>
+    <span class="tick edge due" style:bottom="{axis.deadlineY}px">DUE</span>
+
+    <div class="boundary" style:bottom="{axis.boundaryY}px"></div>
 
     <!-- 레인. 뼈대를 공유하므로 같은 높이는 모든 레인에서 같은 뜻입니다 -->
     <div class="lanes">
@@ -351,7 +358,7 @@
     {/if}
 
     <!-- 마감선. 지난 항목이 있으면 그 위로 올라갑니다 -->
-    <div class="deadline" style:bottom="{axis.deadlineY}px"><span>DUE</span></div>
+    <div class="deadline" style:bottom="{axis.deadlineY}px"></div>
   </div>
 </section>
 
@@ -562,29 +569,29 @@
     transform: translateY(50%);
   }
 
+  /**
+   * DUE와 24H도 눈금입니다.
+   *
+   * 예전에는 오른쪽 끝에 붙어 있어서 맨 오른쪽 레인의 카드와 자리를 다퉜습니다.
+   * 라벨을 옮기고 카드를 밀어내는 짓을 번갈아 하다가, 애초에 자리가 잘못이었다는
+   * 걸 알았습니다 — 이 값들이 말하는 건 '높이가 무슨 시각인가'이고, 그건 왼쪽
+   * 여백이 하는 일입니다. 옮기고 나니 겹칠 일 자체가 사라져서, 카드를 밀어내려고
+   * 벌려 두었던 queueTop도 원래대로 돌렸습니다.
+   */
+  .tick.edge {
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .tick.due {
+    color: var(--deadline);
+  }
+
   .boundary {
     position: absolute;
     left: calc(var(--gutter) - 10px);
     right: 0;
     border-top: 1px dashed var(--boundary);
-  }
-
-  /**
-   * 라벨은 경계선 위에 앉습니다. 눈금 라벨들과 같은 높이 감각을 씁니다.
-   *
-   * 그만큼의 자리는 theme의 queueTop이 비워 둡니다. 그 값이 10px이던 시절에는
-   * 대기 구역 첫 카드와 5px 겹쳤는데, 그때 라벨을 아래로 내린 건 잘못된
-   * 해법이었습니다 — 겹친 원인은 라벨의 위치가 아니라 카드가 너무 낮게
-   * 시작하는 것이었고, 아래로 내리면 이번엔 활주로가 접혔을 때 DUE와 겹쳤습니다.
-   */
-  .boundary span {
-    position: absolute;
-    right: 0;
-    top: -15px;
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: var(--fs-axis);
-    color: var(--text-muted);
-    letter-spacing: 0.1em;
   }
 
   .deadline {
@@ -594,15 +601,5 @@
     height: 1px;
     background: linear-gradient(90deg, var(--deadline), transparent);
     z-index: 6;
-  }
-
-  .deadline span {
-    position: absolute;
-    right: 0;
-    bottom: 3px;
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: var(--fs-axis);
-    color: var(--deadline);
-    letter-spacing: 0.08em;
   }
 </style>
