@@ -1,4 +1,5 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
+import { forgetTask } from './notify';
 import { migrateFromLocalStorage, readJson, writeJson } from './persist';
 import { maxTopicsPerPage } from './layout';
 import { theme } from './theme';
@@ -203,6 +204,10 @@ export async function restoreTask(id: string): Promise<boolean> {
   // 반대로 하면 그 사이에 죽었을 때 할 일이 어디에도 없습니다.
   await source.insert?.(toTask(entry));
   await dropArchived(id);
+
+  // 되살아났으니 알림도 다시 받을 수 있어야 합니다. 보낸 기록을 그대로 두면
+  // 되돌린 할 일은 마감이 코앞이어도 두 번 다시 울리지 않습니다.
+  await forgetTask(id);
 
   const i = undo.stack.findIndex((e) => e.id === id);
   if (i >= 0) undo.stack.splice(i, 1);

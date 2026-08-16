@@ -25,6 +25,7 @@
   import { MS_HOUR } from './lib/urgency';
   import { maxTopicsPerPage } from './lib/layout';
   import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
+  import { runNotifications } from './lib/notify';
   import { theme } from './lib/theme';
   import type { NewTask, Task } from './lib/types';
 
@@ -155,6 +156,19 @@
     settings = { ...settings, ...patch };
     void saveSettings(settings);
   }
+
+  /**
+   * 시계가 움직일 때마다 알림을 살핍니다.
+   *
+   * 시각을 미리 예약하지 않습니다. 예약해 두면 절전에서 깨어났을 때, 마감을
+   * 고쳤을 때, 할 일을 지웠을 때마다 예약을 손봐야 하고 그중 하나만 빠뜨려도
+   * 엉뚱한 알림이 갑니다. 매 틱에 지금 상태를 보고 판단하면 그런 어긋남이
+   * 생길 자리가 없습니다.
+   */
+  $effect(() => {
+    const at = store.now;
+    void runNotifications(store.tasks, settings, at);
+  });
 
   /**
    * 설정 영역이 쓸 수 있는 높이.

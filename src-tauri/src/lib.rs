@@ -299,6 +299,7 @@ pub fn run() {
         // 할 일과 주제를 앱 데이터 폴더의 JSON 파일에 둡니다. localStorage는
         // 브라우저가 언제든 비울 수 있고 출처에 묶여 있어 사용자 데이터를
         // 맡기기에 적절하지 않습니다.
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
