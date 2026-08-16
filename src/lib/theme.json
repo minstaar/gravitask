@@ -11,7 +11,7 @@
     "cardGap": 6,
     "minQueueHeight": 80,
     "floor": 6,
-    "queueTop": 20,
+    "queueTop": 16,
     "maxHeightFraction": 0.55,
     "minColumnHeight": 200,
     "topicsPerPage": 4,
