@@ -1,5 +1,5 @@
 ﻿<script lang="ts">
-  import CategoryEditor from './lib/components/CategoryEditor.svelte';
+  import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
   import {
@@ -24,6 +24,7 @@
   } from './lib/store.svelte';
   import { MS_HOUR } from './lib/urgency';
   import { maxTopicsPerPage } from './lib/layout';
+  import { openSettingsWindow } from './lib/settings';
   import { theme } from './lib/theme';
   import type { NewTask, Task } from './lib/types';
 
@@ -358,33 +359,21 @@
         >
       </span>
 
-      <div class="tools">
-        {#if editing}
-          <div class="zoom">
-            <button
-              aria-label="축소"
-              disabled={view.zoom <= ZOOM_STEPS[0]}
-              onclick={() => nudgeZoom(-1)}>−</button
-            >
-            <span class="pct">{Math.round(view.zoom * 100)}%</span>
-            <button
-              aria-label="확대"
-              disabled={view.zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-              onclick={() => nudgeZoom(1)}>+</button
-            >
-          </div>
-        {/if}
-
-        <button
-          class="edit-toggle"
-          class:on={editing}
-          aria-pressed={editing}
-          title={editing ? '편집 끝내기' : '주제 편집'}
-          onclick={() => (editing = !editing)}
-        >
-          {editing ? '완료' : '주제 편집'}
-        </button>
-      </div>
+      <!--
+        버튼 하나만 둡니다. 75% 배율에서 위젯이 300px까지 좁아지는데
+        GRAVITASK에 버튼이 둘이면 붐빕니다. 배율 조절도 패널 안으로 옮겼습니다 —
+        '주제 편집'이라는 이름 아래 주제 아닌 것들이 들어가면 이름이 거짓말이 되므로
+        버튼은 '설정'이고, 갈래는 패널 안에서 나눕니다.
+      -->
+      <button
+        class="edit-toggle"
+        class:on={editing}
+        aria-pressed={editing}
+        title={editing ? '설정 닫기' : '설정'}
+        onclick={() => (editing = !editing)}
+      >
+        {editing ? '완료' : '설정'}
+      </button>
     </div>
 
     <QuickAdd
@@ -397,16 +386,20 @@
     />
 
     {#if editing}
-      <CategoryEditor
+      <SettingsPanel
         categories={sorted}
         tasks={store.tasks}
         perPage={view.perPage}
         maxPerPage={maxTopicsPerPage()}
+        zoom={view.zoom}
+        zoomSteps={ZOOM_STEPS}
         onAdd={() => addCategory()}
         onRename={renameCategory}
         onMove={moveCategory}
         onRemove={removeCategory}
         onPerPage={setPerPage}
+        onZoom={nudgeZoom}
+        onOpenSettings={() => void openSettingsWindow()}
       />
     {/if}
 
@@ -491,86 +484,6 @@
 
   /* 눈에 띄어야 합니다. 주제가 하드코딩처럼 보이면 사용자는 자기 용도로
      바꿀 수 있다는 걸 아예 모르고 지나갑니다. */
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-  }
-
-  .edit-toggle {
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.72);
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    padding: 5px 12px;
-    cursor: pointer;
-  }
-
-  .edit-toggle:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.16);
-    border-color: rgba(255, 255, 255, 0.45);
-  }
-
-  .edit-toggle.on {
-    color: #cfcbff;
-    border-color: rgba(160, 150, 255, 0.55);
-    background: rgba(90, 80, 190, 0.28);
-  }
-
-
-  /* 패널의 flex gap이 빈 자리에도 붙으므로 그만큼 되돌립니다.
-     자리를 잡지 않은 평소에 14px이 그냥 낭비되면 안 됩니다. */
-  .reserve {
-    flex: none;
-    margin-top: -14px;
-  }
-
-  /* 편집 중에만 드러납니다. 평소 위젯에는 조작부가 없어야 합니다 */
-  .zoom {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .zoom button {
-    font: inherit;
-    font-size: 13px;
-    line-height: 1;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.72);
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 7px;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    cursor: pointer;
-  }
-
-  .zoom button:hover:not(:disabled) {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.16);
-  }
-
-  .zoom button:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  .pct {
-    font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    color: rgba(255, 255, 255, 0.6);
-    min-width: 34px;
-    text-align: center;
-  }
-
   .undo {
     display: flex;
     align-items: center;

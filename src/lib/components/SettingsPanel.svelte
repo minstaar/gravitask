@@ -7,11 +7,15 @@
     tasks,
     perPage,
     maxPerPage,
+    zoom,
+    zoomSteps,
     onAdd,
     onRename,
     onMove,
     onRemove,
     onPerPage,
+    onZoom,
+    onOpenSettings,
   }: {
     categories: Category[];
     tasks: Task[];
@@ -19,11 +23,16 @@
     perPage: number;
     /** 폭 상한에 걸려 더는 늘릴 수 없는 지점 */
     maxPerPage: number;
+    zoom: number;
+    zoomSteps: number[];
     onAdd: () => void;
     onRename: (id: string, name: string) => void;
     onMove: (id: string, delta: number) => void;
     onRemove: (id: string) => void;
     onPerPage: (n: number) => void;
+    /** delta는 -1(축소) 또는 +1(확대) */
+    onZoom: (delta: number) => void;
+    onOpenSettings: () => void;
   } = $props();
 
   // 할 일이 남아 있으면 지울 수 없습니다. 되돌릴 방법이 없는 삭제는 막습니다.
@@ -43,7 +52,7 @@
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-name="{theme.type.category}px"
 >
-  <h2>주제</h2>
+  <h2>주제 편집</h2>
 
   <ul>
     {#each categories as category, i (category.id)}
@@ -86,6 +95,26 @@
   <button class="add" onclick={onAdd}>＋ 주제 추가</button>
 
   <!--
+    보기 — 화면에 얼마나 담을지. 배율과 주제 수는 사실 같은 질문에 대한 답이라
+    나란히 둡니다. 둘 다 결과가 그 자리에서 즉시 보이므로 위젯 안에 있어야 합니다.
+  -->
+  <h2 class="section">보기</h2>
+
+  <div class="row">
+    <span class="label">배율</span>
+    <button class="nudge" aria-label="축소" disabled={zoom <= zoomSteps[0]} onclick={() => onZoom(-1)}
+      >−</button
+    >
+    <span class="count">{Math.round(zoom * 100)}%</span>
+    <button
+      class="nudge"
+      aria-label="확대"
+      disabled={zoom >= zoomSteps[zoomSteps.length - 1]}
+      onclick={() => onZoom(1)}>＋</button
+    >
+  </div>
+
+  <!--
     주제가 늘 때마다 위젯이 옆으로 자라면 안 되므로, 한 번에 보여줄 수를 정하고
     나머지는 페이지를 넘겨 봅니다. 상한은 폭 예산이 정합니다 — 그보다 더 넣으면
     제목이 거의 남지 않습니다.
@@ -109,6 +138,18 @@
       <span class="note">{Math.ceil(categories.length / perPage)}쪽</span>
     {/if}
   </div>
+
+  <!--
+    환경설정은 별도 창입니다.
+    결과가 그 자리에서 보이지 않고, 자주 열지 않고, 폼이 큽니다. 위젯 창은
+    테두리도 크기 조절도 스크롤도 없고 내용에 맞춰 크기가 정해져서, 여기 담으면
+    열 때마다 위젯이 두 배가 됩니다.
+  -->
+  <h2 class="section">환경설정</h2>
+
+  <button class="add outbound" onclick={onOpenSettings}>
+    알림 · 시작 · 업데이트 설정 열기
+  </button>
 </section>
 
 <style>
@@ -151,8 +192,16 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding-top: 8px;
+  }
+
+  /* 큰 갈래를 나눕니다. 주제 편집과 환경설정은 성격이 다른 일입니다 */
+  .section {
+    padding-top: 9px;
     border-top: 1px solid rgba(255, 255, 255, 0.09);
+  }
+
+  .outbound {
+    text-align: left;
   }
 
   .label {

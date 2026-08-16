@@ -11,7 +11,7 @@
     "cardGap": 6,
     "minQueueHeight": 80,
     "floor": 6,
-    "queueTop": 10,
+    "queueTop": 0,
     "maxHeightFraction": 0.55,
     "minColumnHeight": 200,
     "topicsPerPage": 4,
@@ -19,7 +19,7 @@
     "laneMin": 92,
     "maxWidth": 660,
     "laneGap": 10,
-    "gutter": 44
+    "gutter": 36
   },
 
   "type": {

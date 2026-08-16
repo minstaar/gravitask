@@ -299,7 +299,8 @@
       <span class="tick" style:bottom="{tick.y}px">{tick.label}</span>
     {/each}
 
-    <span class="tick edge" style:bottom="{axis.boundaryY}px">{L.runwayHours}H</span>
+    <!-- 시간 단위는 소문자로 통일합니다. DUE만 대문자인데, 그건 단위가 아니라 단어입니다 -->
+    <span class="tick edge" style:bottom="{axis.boundaryY}px">{L.runwayHours}h</span>
     <span class="tick edge due" style:bottom="{axis.deadlineY}px">DUE</span>
 
     <div class="boundary" style:bottom="{axis.boundaryY}px"></div>
@@ -587,11 +588,20 @@
     color: var(--deadline);
   }
 
+  /**
+   * 경계선은 카드 위에 그립니다.
+   *
+   * 대기 구역 첫 카드가 이 선에 딱 붙어 있어서(queueTop = 0), 카드를 나중에
+   * 그리면 카드가 점선을 덮어 레인 폭만큼 선이 끊깁니다. 선을 위로 올리면
+   * 붙는 것과 선이 이어지는 것을 둘 다 얻습니다. 마감선도 같은 이유로
+   * z-index를 씁니다.
+   */
   .boundary {
     position: absolute;
     left: calc(var(--gutter) - 10px);
     right: 0;
     border-top: 1px dashed var(--boundary);
+    z-index: 6;
   }
 
   .deadline {
