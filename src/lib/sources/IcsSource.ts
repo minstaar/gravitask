@@ -70,10 +70,9 @@ export class IcsSource implements TaskSource {
    * 계속 보여주고 언제 받아온 것인지만 밝힙니다.
    */
   async sync(now = Date.now()): Promise<Subscription> {
-    if (!inTauri) {
-      this.#sub = { ...this.#sub, error: '앱에서만 캘린더를 받아 옵니다' };
-      return this.#sub;
-    }
+    // 브라우저 개발 중에는 Rust가 없어 받아 올 수 없습니다. 사용자가 볼 화면이
+    // 아니므로 실패로 적지 않고 조용히 넘어갑니다.
+    if (!inTauri) return this.#sub;
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');

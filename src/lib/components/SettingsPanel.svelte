@@ -427,15 +427,8 @@
       -->
       <div class="row">
         <button class="nudge topic" onclick={() => (topicOpen = !topicOpen)}>
-          {calTopic ? nameOf(calTopic) : '주제 선택'}
+          <span>{calTopic ? nameOf(calTopic) : '주제 선택'}</span>
           <span class="caret" class:up={topicOpen}>▾</span>
-        </button>
-        <button
-          class="add"
-          disabled={!calUrl.trim() || !calTopic || calBusy}
-          onclick={() => void submitCalendar()}
-        >
-          {calBusy ? '받는 중…' : '등록'}
         </button>
       </div>
 
@@ -467,6 +460,16 @@
           {/if}
         </div>
       {/if}
+
+      <div class="row">
+        <button
+          class="add register"
+          disabled={!calUrl.trim() || !calTopic || calBusy}
+          onclick={() => void submitCalendar()}
+        >
+          {calBusy ? '받는 중…' : '등록'}
+        </button>
+      </div>
 
       {#if calendars.length > 0}
         <div class="row">
@@ -741,13 +744,26 @@
   }
 
   /* 주제 고르기 — 앱의 다른 버튼과 같은 모양을 씁니다 */
-  .topic {
+  /**
+   * 주소 칸과 같은 폭으로 한 줄을 채웁니다.
+   *
+   * 옆에 등록 버튼을 나란히 두면 둘이 같은 층위로 보여서, 주제를 고르는 일과
+   * 등록하는 일이 동시에 할 수 있는 것처럼 읽힙니다. 실제로는 주소를 넣고
+   * 주제를 고른 뒤에야 등록입니다. 한 줄씩 내려가야 그 순서가 보입니다.
+   */
+  .row .topic {
     display: flex;
     align-items: center;
-    gap: 5px;
+    justify-content: space-between;
+    flex: 1;
     min-width: 0;
-    padding: 4px 9px;
+    padding: 6px 10px;
     font-weight: 600;
+  }
+
+  /* 마지막 단계라 한 줄을 다 씁니다 */
+  .row .register {
+    flex: 1;
   }
 
   .caret {
