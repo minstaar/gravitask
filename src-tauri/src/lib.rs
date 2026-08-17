@@ -13,6 +13,7 @@ use tauri::{
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_window_state::{AppHandleExt as WindowStateExt, StateFlags};
 
 /// 시작 직후 한 번, 그 뒤로는 이 간격마다 새 버전을 확인합니다.
 /// 위젯은 며칠씩 켜져 있으므로 시작 시 한 번만으로는 부족합니다.
@@ -33,6 +34,9 @@ struct WidgetState {
 
 /// Win+D 순간 Progman이 솟아오르는 것을 사람 눈에 띄기 전에 따라잡는 간격.
 const PARK_INTERVAL: Duration = Duration::from_millis(80);
+
+/// 옮긴 자리를 적어 두는 주기. 끌고 있는 동안은 쓰지 않고 손을 뗀 뒤에 씁니다.
+const SAVE_INTERVAL: Duration = Duration::from_secs(2);
 
 #[cfg(windows)]
 fn raw_handle(window: &WebviewWindow) -> Option<isize> {
@@ -91,6 +95,31 @@ fn spawn_desktop_parker(app: &AppHandle, state: Arc<WidgetState>) {
 
 #[cfg(not(windows))]
 fn spawn_desktop_parker(_app: &AppHandle, _state: Arc<WidgetState>) {}
+
+/// 옮겨 놓은 자리를 그때그때 적어 둡니다.
+///
+/// 플러그인은 앱이 정상적으로 끝날 때 저장합니다. 그런데 위젯이 꺼지는 방식에
+/// 정상 종료만 있는 것이 아닙니다 — 업데이트 재시작, 작업 관리자에서 끝내기,
+/// 로그오프, 정전. 그때마다 자리를 잊으면 사용자는 위젯을 매번 제자리로 다시
+/// 끌어다 놓아야 하고, 그건 위젯을 두는 이유 자체를 갉아먹습니다.
+///
+/// 끌고 있는 동안 Moved가 수십 번 오므로 그때마다 파일을 쓰지는 않습니다.
+/// 옮겨졌다는 표시만 남기고 여기서 몰아 씁니다.
+fn spawn_position_saver(app: &AppHandle, moved: Arc<AtomicBool>) {
+    let handle = app.clone();
+
+    std::thread::spawn(move || loop {
+        std::thread::sleep(SAVE_INTERVAL);
+
+        if !moved.swap(false, Ordering::Relaxed) {
+            continue;
+        }
+
+        if let Err(err) = handle.save_window_state(StateFlags::POSITION) {
+            log::warn!("창 위치를 저장하지 못했습니다: {err}");
+        }
+    });
+}
 
 /// 창은 숨은 채로 뜨고, 프런트가 내용에 맞춰 크기를 잡은 뒤 스스로 보여 줍니다.
 ///
@@ -191,6 +220,13 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         )
         .await
         .map_err(|e| e.to_string())?;
+
+    // 재시작 직전에 자리를 직접 적어 둡니다. restart()는 정상 종료 경로를 타지
+    // 않아서, 플러그인이 저장할 기회를 얻지 못한 채 프로세스가 갈아치워집니다.
+    // 업데이트 한 번에 위젯이 낯선 자리에 가 있는 이유가 이것입니다.
+    if let Err(err) = app.save_window_state(StateFlags::POSITION) {
+        log::warn!("재시작 전 창 위치를 저장하지 못했습니다: {err}");
+    }
 
     app.restart();
 }
@@ -365,11 +401,18 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let focus_state = state.clone();
-                window.on_window_event(move |event| {
-                    if let WindowEvent::Focused(focused) = event {
+                let moved = Arc::new(AtomicBool::new(false));
+                let dirty = moved.clone();
+
+                window.on_window_event(move |event| match event {
+                    WindowEvent::Focused(focused) => {
                         focus_state.focused.store(*focused, Ordering::Relaxed);
                     }
+                    WindowEvent::Moved(_) => dirty.store(true, Ordering::Relaxed),
+                    _ => {}
                 });
+
+                spawn_position_saver(app.handle(), moved);
             }
 
             spawn_desktop_parker(app.handle(), state);
