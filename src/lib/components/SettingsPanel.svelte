@@ -579,16 +579,30 @@
     width: 0;
     min-width: 100%;
     border-radius: 14px;
-    padding: 12px 14px 14px;
+    padding: 12px 9px 14px;
     background: var(--surface);
     border: 1px solid var(--surface-border);
     color: var(--text);
   }
 
-  /* 상한 있는 창. 내용이 넘치면 끌어서 봅니다 */
+  /**
+   * 상한 있는 창. 내용이 넘치면 끌어서 봅니다.
+   *
+   * 좌우 5px은 초점 테두리의 자리입니다. 테두리는 요소 바깥으로 4px(굵기
+   * 2px + 간격 2px) 나가는데, 여백이 없으면 폭을 꽉 채운 입력칸을 클릭했을
+   * 때 정확히 그 4px이 잘립니다. 주제 이름 칸도 캘린더 주소 칸도 왼쪽이
+   * 잘려 보였던 이유입니다.
+   *
+   * overflow:hidden은 테두리 상자가 아니라 패딩 상자에서 자릅니다. 그래서
+   * 패딩만 주면 안쪽 내용은 그대로 잘리고 테두리만 살아남습니다.
+   *
+   * 대신 .editor의 좌우 여백을 5px 줄였습니다. 줄들이 놓이는 자리는 이전과
+   * 같습니다 — 자리를 옮긴 것이 아니라 잘릴 여지를 없앤 것입니다.
+   */
   .viewport {
     position: relative;
     overflow: hidden;
+    padding-inline: 5px;
   }
 
   .viewport.pannable {
@@ -812,6 +826,11 @@
   /* 등록은 글자만큼만. 고르는 일이 넓고 마무리가 좁은 것이 순서와 맞습니다 */
   .row .register {
     flex: none;
+  }
+
+  /* 나란히 선 둘은 키가 같아야 한 줄로 보입니다 — 26px과 30px이 붙어 있었습니다 */
+  .row.top .topic {
+    min-height: 30px;
   }
 
   .caret {
