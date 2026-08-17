@@ -8,7 +8,7 @@
     setAutostart,
   } from '../system';
   import type { Settings } from '../settings';
-  import { maskUrl, type Subscription } from '../subscriptions';
+  import type { Subscription } from '../subscriptions';
   import type { Category, Task } from '../types';
 
   let {
@@ -28,6 +28,7 @@
     onSettings,
     calendars,
     onAddCalendar,
+    onAddTopic,
     onRemoveCalendar,
     onSyncCalendars,
     maxHeight,
@@ -52,6 +53,8 @@
     onSettings: (patch: Partial<Settings>) => void;
     calendars: Subscription[];
     onAddCalendar: (url: string, categoryId: string) => Promise<void>;
+    /** 새 주제를 만들고 그 id를 돌려줍니다 */
+    onAddTopic: (name: string) => string;
     onRemoveCalendar: (id: string) => void;
     onSyncCalendars: () => void;
     /** 이 영역이 쓸 수 있는 최대 높이. 넘치는 만큼은 끌어서 봅니다 */
@@ -101,19 +104,56 @@
 
   const nameOf = (id: string) => categories.find((c) => c.id === id)?.name ?? '(없는 주제)';
 
-  /** '3분 전' 정도면 충분합니다. 정확한 시각을 알고 싶은 값이 아닙니다 */
-  function ago(at: number | null): string {
-    if (!at) return '못 받음';
-    const m = Math.floor((Date.now() - at) / 60000);
-    if (m < 1) return '방금';
-    if (m < 60) return `${m}분 전`;
-    const h = Math.floor(m / 60);
-    return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+  /**
+   * 마지막으로 받아온 시각.
+   *
+   * '방금'이라고만 적으면 무엇에 대한 방금인지도, 실제로 언제인지도 알 수
+   * 없습니다. 시각을 그대로 적습니다. 오늘이면 시:분이면 충분하고, 그보다
+   * 오래됐다면 며칠 묵었는지가 중요하므로 날짜를 붙입니다.
+   */
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  function syncedLabel(at: number | null): string {
+    if (!at) return '받은 적 없음';
+    const d = new Date(at);
+    const clock = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const sameDay = new Date().toDateString() === d.toDateString();
+    return sameDay ? clock : `${d.getMonth() + 1}/${d.getDate()} ${clock}`;
+  }
+
+  /**
+   * 주제 고르기.
+   *
+   * 브라우저 기본 select는 이 앱의 다른 어떤 것과도 닮지 않았습니다. 대신
+   * 목록을 제자리에서 펼칩니다 — 이 패널은 잘린 창(overflow:hidden) 안에 있어서,
+   * 떠오르는 방식으로 만들면 목록 아래쪽이 잘립니다. QuickAdd의 팝오버가 창
+   * 밖으로 나가 잘리던 것과 같은 문제입니다.
+   */
+  let topicOpen = $state(false);
+  let newTopic = $state('');
+  let addingTopic = $state(false);
+
+  const chosenTopic = $derived(calTopic || categories[0]?.id || '');
+
+  function pickTopic(id: string) {
+    calTopic = id;
+    topicOpen = false;
+    addingTopic = false;
+  }
+
+  function confirmNewTopic() {
+    const name = newTopic.trim();
+    if (!name) return;
+    const id = onAddTopic(name);
+    calTopic = id;
+    newTopic = '';
+    addingTopic = false;
+    topicOpen = false;
   }
 
   async function submitCalendar() {
     const url = calUrl.trim();
-    const topic = calTopic || categories[0]?.id;
+    const topic = chosenTopic;
     if (!url || !topic || calBusy) return;
     calBusy = true;
     try {
@@ -344,6 +384,93 @@
         >
       </div>
 
+      <h2 class="section">캘린더 연동</h2>
+
+      <!--
+        어디서 주소를 가져오는지 적어 둡니다. 이 화면만 보고는 무엇을 붙여넣어야
+        할지 알 방법이 없고, 구글과 애플은 부르는 이름조차 다릅니다.
+      -->
+      <p class="guide">
+        <strong>구글</strong> 캘린더 설정 → 해당 캘린더 → <em>비공개 주소(ICS)</em> 복사<br />
+        <strong>애플</strong> 캘린더 앱에서 캘린더 옆 ⓘ → <em>공용 캘린더</em> 켜기 → 링크 공유
+      </p>
+      <p class="guide warn">
+        이 주소를 아는 사람은 그 캘린더를 전부 읽을 수 있습니다. Windows 자격 증명
+        저장소에 넣어 두며, 설정 파일에는 남지 않습니다.
+      </p>
+
+      {#each calendars as cal (cal.id)}
+        <div class="row sub">
+          <span class="label">{nameOf(cal.categoryId)} · {cal.label || '캘린더'}</span>
+          <span class="status" class:stale={!!cal.error}>{syncedLabel(cal.syncedAt)}</span>
+          <button class="danger" aria-label="연결 해제" onclick={() => onRemoveCalendar(cal.id)}>
+            연결 해제
+          </button>
+        </div>
+        {#if cal.error}
+          <div class="row why"><span>{cal.error}</span></div>
+        {/if}
+      {/each}
+
+      <div class="row">
+        <input
+          class="rename"
+          placeholder="캘린더 주소 붙여넣기"
+          bind:value={calUrl}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') void submitCalendar();
+          }}
+        />
+      </div>
+
+      <!-- 주제 고르기. 제자리에서 펼칩니다 — 떠오르면 잘린 창 밖으로 나갑니다 -->
+      <div class="row">
+        <span class="label">어느 주제로</span>
+        <button class="nudge topic" onclick={() => (topicOpen = !topicOpen)}>
+          {nameOf(chosenTopic)}
+          <span class="caret" class:up={topicOpen}>▾</span>
+        </button>
+        <button class="add" disabled={!calUrl.trim() || calBusy} onclick={() => void submitCalendar()}>
+          {calBusy ? '받는 중…' : '등록'}
+        </button>
+      </div>
+
+      {#if topicOpen}
+        <div class="options">
+          {#each categories as c (c.id)}
+            <button class="option" class:on={c.id === chosenTopic} onclick={() => pickTopic(c.id)}>
+              {c.name}
+            </button>
+          {/each}
+
+          {#if addingTopic}
+            <div class="row">
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                class="rename"
+                placeholder="새 주제 이름"
+                autofocus
+                bind:value={newTopic}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') confirmNewTopic();
+                  if (e.key === 'Escape') addingTopic = false;
+                }}
+              />
+              <button class="nudge" disabled={!newTopic.trim()} onclick={confirmNewTopic}>확인</button>
+            </div>
+          {:else}
+            <button class="option new" onclick={() => (addingTopic = true)}>＋ 새 주제</button>
+          {/if}
+        </div>
+      {/if}
+
+      {#if calendars.length > 0}
+        <div class="row">
+          <span class="label">20분마다 자동으로 갱신됩니다</span>
+          <button class="danger action" onclick={onSyncCalendars}>갱신</button>
+        </div>
+      {/if}
+
       <h2 class="section">알림</h2>
 
       <!--
@@ -385,59 +512,6 @@
             </button>
           </div>
         {/each}
-      {/if}
-
-      <h2 class="section">캘린더</h2>
-
-      <!--
-        캘린더 하나가 주제 하나입니다. 주제를 나누는 기준을 사용자가 이미
-        캘린더 쪽에서 정해 두었으니, 그걸 그대로 씁니다.
-      -->
-      <!--
-        실패했으면 사유를 그대로 적습니다. '실패'만 보이면 무엇을 고쳐야 할지
-        알 방법이 없습니다 — 주소가 틀린 건지, 캘린더가 비공개인 건지, 네트워크가
-        끊긴 건지에 따라 할 일이 전혀 다릅니다.
-      -->
-      {#each calendars as cal (cal.id)}
-        <div class="row sub">
-          <span class="label">{nameOf(cal.categoryId)} · {maskUrl(cal.url)}</span>
-          <span class="status" class:stale={!!cal.error}>{ago(cal.syncedAt)}</span>
-          <button class="danger" aria-label="구독 해지" onclick={() => onRemoveCalendar(cal.id)}>
-            해지
-          </button>
-        </div>
-        {#if cal.error}
-          <div class="row why"><span>{cal.error}</span></div>
-        {/if}
-      {/each}
-
-      <div class="row">
-        <input
-          class="rename"
-          placeholder="캘린더 주소 (비공개 ICS)"
-          bind:value={calUrl}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') void submitCalendar();
-          }}
-        />
-      </div>
-
-      <div class="row">
-        <select class="rename pick" bind:value={calTopic}>
-          {#each categories as c (c.id)}
-            <option value={c.id}>{c.name}</option>
-          {/each}
-        </select>
-        <button class="add" disabled={!calUrl.trim() || calBusy} onclick={() => void submitCalendar()}>
-          {calBusy ? '받는 중…' : '＋ 구독'}
-        </button>
-      </div>
-
-      {#if calendars.length > 0}
-        <div class="row">
-          <span class="label">주소는 20분마다 다시 읽습니다</span>
-          <button class="danger action" onclick={onSyncCalendars}>지금</button>
-        </div>
       {/if}
 
       <h2 class="section">시작 · 업데이트</h2>
@@ -643,8 +717,85 @@
     color: var(--deadline);
   }
 
-  .pick {
-    flex: 1;
+  /* 안내문. 읽으라고 있는 글이라 본문 색을 쓰되 크기로 낮춥니다 */
+  .guide {
+    margin: 0;
+    font-size: var(--fs-meta);
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+
+  .guide strong {
+    color: var(--text);
+    font-weight: 700;
+    margin-right: 3px;
+  }
+
+  .guide em {
+    font-style: normal;
+    color: var(--text);
+  }
+
+  .guide.warn {
+    color: rgba(224, 86, 111, 0.85);
+  }
+
+  /* 주제 고르기 — 앱의 다른 버튼과 같은 모양을 씁니다 */
+  .topic {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 4px 9px;
+    font-weight: 600;
+  }
+
+  .caret {
+    font-size: 9px;
+    opacity: 0.6;
+    transition: transform 0.15s ease;
+  }
+
+  .caret.up {
+    transform: rotate(180deg);
+  }
+
+  /* 제자리에서 펼칩니다. 떠오르면 잘린 창 밖으로 나가 아래쪽이 안 보입니다 */
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    margin-left: 12px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .option {
+    font: inherit;
+    font-size: var(--fs-meta);
+    text-align: left;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 9px;
+    min-height: 26px;
+    cursor: pointer;
+  }
+
+  .option:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .option.on {
+    background: rgba(90, 80, 190, 0.32);
+    font-weight: 600;
+  }
+
+  .option.new {
+    color: var(--text-muted);
   }
 
   .status.ready {

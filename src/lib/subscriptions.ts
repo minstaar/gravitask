@@ -6,16 +6,19 @@ import { readJson, writeJson } from './persist';
  * 캘린더 하나가 주제 하나입니다. 가장 이해하기 쉬운 매핑이고, 주제를 나누는
  * 기준을 사용자가 이미 캘린더 쪽에서 정해 두었기 때문입니다.
  *
- * ⚠ 주소는 지금 이 파일에 평문으로 들어갑니다. 비공개 ICS 주소는 사실상
- * 비밀번호라(그 주소를 아는 사람은 캘린더 전체를 읽습니다) OS 자격 증명
- * 저장소로 옮겨야 합니다. 아직 안 옮겼습니다.
+ * 주소는 여기 없습니다. 비공개 ICS 주소는 사실상 비밀번호라(그 주소를 아는
+ * 사람은 캘린더 전체를 읽습니다) OS 자격 증명 저장소에 두고, 이 파일에는
+ * 그것을 가리키는 손잡이(id)와 화면에 띄울 이름만 남깁니다. 그래서 이 파일이
+ * 백업이나 클라우드 동기화로 나가도 캘린더는 열리지 않습니다.
  */
 
 const KEY = 'reminder-widget:calendars:v1';
 
 export interface Subscription {
+  /** 자격 증명 저장소에서 주소를 꺼낼 때 쓰는 손잡이이기도 합니다 */
   id: string;
-  url: string;
+  /** 화면에 띄울 이름. 주소가 아니라 호스트뿐이라 비밀이 아닙니다 */
+  label: string;
   /** 이 캘린더의 일정이 놓일 주제 */
   categoryId: string;
   /** 마지막으로 성공한 동기화 시각. 한 번도 성공 못 했으면 null */
@@ -47,17 +50,20 @@ export function newSubscriptionId(): string {
 }
 
 /**
- * 주소를 그대로 보여주지 않습니다.
+ * 저장할 이름을 짓습니다.
  *
- * 비공개 주소에는 계정을 식별하는 긴 토큰이 들어 있어서, 화면 캡처 한 장이나
- * 어깨너머 한 번으로 캘린더 전체가 새어 나갑니다. 어느 캘린더인지 알아볼
- * 만큼만 보입니다.
+ * 호스트만 씁니다. 비공개 주소에는 계정을 식별하는 긴 토큰이 들어 있어서,
+ * 일부라도 남기면 화면 캡처 한 장으로 새어 나갈 여지가 생깁니다. 어느 서비스인지
+ * 아는 것으로 충분합니다.
  */
-export function maskUrl(url: string): string {
+export function labelFor(url: string): string {
   try {
-    const parsed = new URL(url.replace(/^webcals?:\/\//, 'https://'));
-    return `${parsed.hostname} …${parsed.pathname.slice(-6)}`;
+    const host = new URL(url.trim().replace(/^webcals?:\/\//, 'https://')).hostname;
+    if (host.includes('google')) return '구글 캘린더';
+    if (host.includes('icloud')) return 'iCloud 캘린더';
+    if (host.includes('outlook') || host.includes('live.com')) return 'Outlook 캘린더';
+    return host;
   } catch {
-    return url.slice(0, 12) + '…';
+    return '캘린더';
   }
 }

@@ -38,6 +38,41 @@ pub struct Occurrence {
 const ALL_DAY_HOUR: u32 = 23;
 const ALL_DAY_MIN: u32 = 59;
 
+/// 캘린더 주소를 두는 곳.
+///
+/// 비공개 ICS 주소는 사실상 비밀번호입니다 — 그 주소를 아는 사람은 캘린더
+/// 전체를 읽습니다. 앱 데이터 파일에 두면 백업이나 클라우드 동기화로 그 파일이
+/// 나가는 순간 함께 샙니다. OS 자격 증명 저장소는 그러라고 있는 자리입니다.
+///
+/// 주소는 여기서만 꺼내 씁니다. 프런트로 돌려주지 않습니다 — 웹뷰에 두지 않는
+/// 것이 애초에 Rust에서 가져오기로 한 이유의 절반이었습니다.
+const KEYRING_SERVICE: &str = "gravitask-calendar";
+
+fn entry(handle: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, handle).map_err(|e| format!("자격 증명 저장소를 열지 못했습니다: {e}"))
+}
+
+pub fn save_url(handle: &str, url: &str) -> Result<(), String> {
+    entry(handle)?
+        .set_password(url.trim())
+        .map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))
+}
+
+pub fn read_url(handle: &str) -> Result<String, String> {
+    entry(handle)?
+        .get_password()
+        .map_err(|_| "저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())
+}
+
+pub fn forget_url(handle: &str) -> Result<(), String> {
+    match entry(handle)?.delete_credential() {
+        Ok(()) => Ok(()),
+        // 이미 없으면 지운 것과 같습니다
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("주소를 지우지 못했습니다: {e}")),
+    }
+}
+
 pub async fn fetch(url: &str) -> Result<String, String> {
     // webcal://은 https로 바꿔 씁니다. 애플이 공유 링크를 그 꼴로 줍니다.
     let normalized = url

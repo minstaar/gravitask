@@ -7,6 +7,7 @@ import { theme } from './theme';
 import { IcsSource } from './sources/IcsSource';
 import { LocalSource } from './sources/LocalSource';
 import {
+  labelFor,
   loadSubscriptions,
   saveSubscriptions,
   newSubscriptionId,
@@ -86,13 +87,25 @@ export async function syncCalendars(): Promise<void> {
   }
 }
 
+const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+async function command(name: string, args: Record<string, unknown>): Promise<void> {
+  if (!inTauri) throw new Error('앱에서만 캘린더를 등록할 수 있습니다');
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke(name, args);
+}
+
+/**
+ * 주소를 자격 증명 저장소에 먼저 넣고, 목록에는 손잡이만 적습니다.
+ *
+ * 저장에 실패하면 목록에도 넣지 않습니다. 손잡이만 있고 주소가 없는 항목은
+ * 영원히 '주소를 찾을 수 없습니다'만 답하는 유령이 됩니다.
+ */
 export async function addCalendar(url: string, categoryId: string): Promise<void> {
-  const sub: Subscription = {
-    id: newSubscriptionId(),
-    url: url.trim(),
-    categoryId,
-    syncedAt: null,
-  };
+  const id = newSubscriptionId();
+  await command('save_calendar_url', { handle: id, url: url.trim() });
+
+  const sub: Subscription = { id, label: labelFor(url), categoryId, syncedAt: null };
   calendars.list = [...calendars.list, sub];
   await saveSubscriptions(calendars.list);
   await syncOne(sub);
@@ -106,6 +119,13 @@ export async function removeCalendar(id: string): Promise<void> {
   }
   calendars.list = calendars.list.filter((c) => c.id !== id);
   await saveSubscriptions(calendars.list);
+  // 목록에서 지운 뒤 주소도 지웁니다. 순서가 반대면 지우다 실패했을 때
+  // 자격 증명 저장소에 주인 없는 주소가 남습니다.
+  try {
+    await command('forget_calendar_url', { handle: id });
+  } catch {
+    /* 저장소에 없으면 지운 것과 같습니다 */
+  }
   await refresh();
 }
 
@@ -121,6 +141,34 @@ export async function removeCalendar(id: string): Promise<void> {
  *
  * 타이머 콜백은 effect 본문 밖이라 거기서 읽는 것은 추적되지 않습니다.
  */
+/**
+ * 예전 판이 목록에 평문으로 적어 둔 주소를 자격 증명 저장소로 옮깁니다.
+ *
+ * 옮긴 뒤 목록에서 지웁니다. 저장에 실패하면 그 항목은 손잡이만 남아 쓸 수
+ * 없게 되므로, 주소를 그대로 둔 채 다음 실행에서 다시 시도합니다.
+ */
+async function migrateCalendarUrls(list: Subscription[]): Promise<Subscription[]> {
+  if (!list.some((c) => typeof (c as { url?: string }).url === 'string')) return list;
+
+  const moved: Subscription[] = [];
+  for (const sub of list) {
+    const url = (sub as { url?: string }).url;
+    if (!url) {
+      moved.push(sub);
+      continue;
+    }
+    try {
+      await command('save_calendar_url', { handle: sub.id, url });
+      const { url: _gone, ...rest } = sub as Subscription & { url?: string };
+      moved.push({ ...rest, label: rest.label ?? labelFor(url) });
+    } catch {
+      moved.push(sub);
+    }
+  }
+  await saveSubscriptions(moved);
+  return moved;
+}
+
 export function startCalendarPolling(): () => void {
   const kick = setTimeout(() => void syncCalendars(), 0);
   const timer = setInterval(() => void syncCalendars(), POLL_MS);
@@ -181,7 +229,7 @@ export async function init(): Promise<void> {
   if (savedZoom && ZOOM_STEPS.includes(savedZoom)) view.zoom = savedZoom;
   else setZoom(pickZoomForScreen());
 
-  calendars.list = await loadSubscriptions();
+  calendars.list = await migrateCalendarUrls(await loadSubscriptions());
   for (const sub of calendars.list) attach(sub);
 
   const savedPerPage = await readJson<number>(PER_PAGE_KEY);

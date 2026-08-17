@@ -490,6 +490,7 @@
         onSettings={patchSettings}
         calendars={calendars.list}
         onAddCalendar={addCalendar}
+        onAddTopic={(name) => addCategory(name)}
         onRemoveCalendar={(id) => void removeCalendar(id)}
         onSyncCalendars={() => void syncCalendars()}
         maxHeight={settingsBudget}

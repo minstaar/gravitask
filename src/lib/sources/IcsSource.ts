@@ -46,7 +46,7 @@ export class IcsSource implements TaskSource {
   }
 
   get label(): string {
-    return this.#sub.url;
+    return this.#sub.label;
   }
 
   get subscription(): Subscription {
@@ -77,8 +77,10 @@ export class IcsSource implements TaskSource {
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
+      // 주소가 아니라 손잡이를 넘깁니다. 주소는 자격 증명 저장소에 있고
+      // Rust가 거기서 직접 꺼내 씁니다 — 여기로 돌아오지 않습니다.
       const found = await invoke<Occurrence[]>('fetch_calendar', {
-        url: this.#sub.url,
+        handle: this.#sub.id,
         backDays: BACK_DAYS,
         aheadDays: AHEAD_DAYS,
       });

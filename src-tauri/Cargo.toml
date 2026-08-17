@@ -35,3 +35,4 @@ rrule = "0.14.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
 reqwest = "0.13.3"
+keyring = { version = "3.6.3", features = ["windows-native"] }

@@ -213,10 +213,12 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
 /// 학기 내내 쌓이고, 아예 안 남기면 어제 놓친 것이 조용히 사라집니다.
 #[tauri::command]
 async fn fetch_calendar(
-    url: String,
+    handle: String,
     back_days: i64,
     ahead_days: i64,
 ) -> Result<Vec<ics::Occurrence>, String> {
+    // 주소는 여기서만 꺼냅니다. 프런트는 손잡이만 들고 있습니다.
+    let url = ics::read_url(&handle)?;
     let text = ics::fetch(&url).await?;
     let now = chrono::Utc::now();
     Ok(ics::expand(
@@ -224,6 +226,17 @@ async fn fetch_calendar(
         now - chrono::Duration::days(back_days.clamp(0, 365)),
         now + chrono::Duration::days(ahead_days.clamp(1, 730)),
     ))
+}
+
+/// 캘린더 주소를 자격 증명 저장소에 넣습니다. 성공하면 손잡이만 남습니다.
+#[tauri::command]
+fn save_calendar_url(handle: String, url: String) -> Result<(), String> {
+    ics::save_url(&handle, &url)
+}
+
+#[tauri::command]
+fn forget_calendar_url(handle: String) -> Result<(), String> {
+    ics::forget_url(&handle)
 }
 
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
@@ -329,7 +342,9 @@ pub fn run() {
             install_update,
             autostart_enabled,
             set_autostart,
-            fetch_calendar
+            fetch_calendar,
+            save_calendar_url,
+            forget_calendar_url
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
