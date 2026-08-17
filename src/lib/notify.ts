@@ -1,5 +1,6 @@
 import { readJson, writeJson } from './persist';
 import type { Settings } from './settings';
+import type { Category } from './types';
 import { theme } from './theme';
 import type { Task } from './types';
 import { hoursUntil, isNight, MS_HOUR } from './urgency';
@@ -89,8 +90,21 @@ function summarize(titles: string[]): string {
 /** 한 번에 하나만 돌게 합니다. 틱이 겹치면 같은 알림이 두 번 나갑니다 */
 let running = false;
 
+/**
+ * 어느 주제의 일인지 앞에 붙입니다.
+ *
+ * 알림만 보고는 '확률론 과제 3'이 학업인지 알바인지 알 수 없습니다. 주제는
+ * 위젯에서 레인 머리가 말해 주지만, 알림은 위젯 밖으로 나가는 유일한 통로라
+ * 스스로 설명해야 합니다.
+ */
+const tagged = (task: Task, names: Map<string, string>) => {
+  const topic = names.get(task.categoryId);
+  return topic ? `${topic} - ${task.title}` : task.title;
+};
+
 export async function runNotifications(
   tasks: Task[],
+  categories: Category[],
   settings: Settings,
   now: number
 ): Promise<void> {
@@ -99,6 +113,7 @@ export async function runNotifications(
 
   try {
     const sent = await loadSent(now);
+    const names = new Map(categories.map((c) => [c.id, c.name]));
     let changed = false;
 
     const enabled: Record<Kind, boolean> = {
@@ -123,7 +138,7 @@ export async function runNotifications(
       const kind = bandOf(hoursUntil(task.due, now));
       if (!kind || !enabled[kind]) continue;
       if (sent[markOf(task.id, kind)]) continue;
-      pending[kind].push(task.title);
+      pending[kind].push(tagged(task, names));
       if (!quiet) {
         sent[markOf(task.id, kind)] = now;
         changed = true;
@@ -138,7 +153,8 @@ export async function runNotifications(
         (t) => t.completedAt === null && hoursUntil(t.due, now) > 0 && hoursUntil(t.due, now) <= 12
       );
       if (!sent[mark] && overnight.length > 0) {
-        if (await send('오늘 밤 사이 마감', `${summarize(overnight.map((t) => t.title))} — 아침에 다시 알려 드립니다`)) {
+        const titles = overnight.map((t) => tagged(t, names));
+        if (await send('오늘 밤 사이 마감', `${summarize(titles)} — 아침에 다시 알려 드립니다`)) {
           sent[mark] = now;
           changed = true;
         }
@@ -157,11 +173,8 @@ export async function runNotifications(
     for (const { kind } of BANDS) {
       const titles = pending[kind];
       if (titles.length === 0) continue;
-      const body =
-        titles.length === 1
-          ? titles[0]
-          : `${summarize(titles)}이(가) 있습니다`;
-      await send(labelOf(kind), body);
+      // 제목이 이미 '하루 안에 마감'이라고 말하므로 본문은 무엇인지만 답합니다
+      await send(labelOf(kind), summarize(titles));
     }
 
     if (changed) await writeJson(KEY, sent);

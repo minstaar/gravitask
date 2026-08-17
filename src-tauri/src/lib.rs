@@ -118,7 +118,7 @@ fn spawn_reveal_fallback(app: &AppHandle) {
 /// 찾자마자 받아서 설치하지는 않습니다. 설치는 앱 재시작을 뜻하는데, 할 일을
 /// 적는 중에 창이 사라지면 그건 데이터를 잃는 것과 같습니다. 언제 설치할지는
 /// 사용자가 정합니다.
-async fn look_for_update(app: &AppHandle, item: &MenuItem<tauri::Wry>) {
+async fn look_for_update(app: &AppHandle) {
     let updater = match app.updater() {
         Ok(u) => u,
         Err(err) => {
@@ -129,55 +129,21 @@ async fn look_for_update(app: &AppHandle, item: &MenuItem<tauri::Wry>) {
 
     match updater.check().await {
         Ok(Some(update)) => {
-            let _ = item.set_text(format!("업데이트 설치 (v{})", update.version));
             if let Some(tray) = app.tray_by_id("main-tray") {
                 let _ = tray.set_tooltip(Some(format!("Gravitask — v{} 사용 가능", update.version)));
             }
+            // 위젯이 직접 알립니다. 트레이 메뉴는 열어 봐야 보이는데, 열어 볼
+            // 이유를 모르는 사람에게는 없는 것과 같습니다.
+            let _ = app.emit("gravitask://update-available", update.version.clone());
             log::info!("새 버전 v{} 발견", update.version);
         }
-        Ok(None) => {
-            let _ = item.set_text("업데이트 확인");
-        }
+        Ok(None) => {}
         Err(err) => {
             // 네트워크가 끊겨 있거나 릴리스가 아직 없으면 여기로 옵니다.
             // 위젯 본연의 기능과 무관하므로 조용히 넘어갑니다.
             log::info!("업데이트 확인 실패(무시): {err}");
         }
     }
-}
-
-/// 트레이에서 누른 경우. 설치 자체는 커맨드가 하고 여기서는 상태만 적습니다.
-///
-/// 결과를 반드시 메뉴 항목에 되돌려 씁니다. 눌렀는데 아무 표시도 없으면
-/// 사용자는 고장과 구분할 수 없습니다. 최신이라는 답도 답입니다.
-async fn tray_install(app: AppHandle, item: MenuItem<tauri::Wry>) {
-    let _ = item.set_text("확인 중…");
-    let _ = item.set_enabled(false);
-
-    let outcome = install_update(app).await;
-    let message = match outcome {
-        // 성공하면 앱이 재시작하므로 여기까지 오지 않습니다.
-        Ok(()) => "설치 완료".to_string(),
-        Err(err) if err.contains("최신") => {
-            log::info!("업데이트 없음");
-            "최신 버전입니다".to_string()
-        }
-        Err(err) => {
-            log::warn!("업데이트 실패: {err}");
-            "실패 — 다시 시도".to_string()
-        }
-    };
-
-    let _ = item.set_text(&message);
-    let _ = item.set_enabled(true);
-
-    // 잠시 뒤 원래 이름으로 돌립니다. 그대로 두면 다음에 눌러야 할 버튼인지
-    // 알 수 없습니다.
-    let revert = item.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(4));
-        let _ = revert.set_text("업데이트 확인");
-    });
 }
 
 /// 새 버전이 있으면 버전 문자열을, 없으면 None을 돌려줍니다.
@@ -249,22 +215,17 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
 
-    let update = MenuItem::with_id(app, "update", "업데이트 확인", true, None::<&str>)?;
-
-    // 자동 시작은 설정 화면에만 둡니다. 양쪽에 두면 한쪽을 바꿀 때마다 다른 쪽
-    // 표시를 맞춰야 하고, 그 동기화가 어긋나는 순간 켜졌다고 표시된 채 실제로는
-    // 꺼져 있게 됩니다. 한 곳에만 있으면 어긋날 자리가 없습니다.
-    let menu = Menu::with_items(app, &[&show, &hide, &pin, &sep, &update, &quit])?;
+    // 자동 시작과 업데이트는 설정 화면에만 둡니다. 양쪽에 두면 한쪽을 바꿀
+    // 때마다 다른 쪽 표시를 맞춰야 하고, 그 동기화가 어긋나는 순간 표시와 실제가
+    // 달라집니다. 한 곳에만 있으면 어긋날 자리가 없습니다.
+    let menu = Menu::with_items(app, &[&show, &hide, &pin, &sep, &quit])?;
     let pin_ref = pin.clone();
-    let update_ref = update.clone();
 
     // 시작 직후 한 번, 이후 주기적으로 확인합니다.
     let handle = app.handle().clone();
-    let watched = update.clone();
     std::thread::spawn(move || loop {
         let app = handle.clone();
-        let item = watched.clone();
-        tauri::async_runtime::spawn(async move { look_for_update(&app, &item).await });
+        tauri::async_runtime::spawn(async move { look_for_update(&app).await });
         std::thread::sleep(UPDATE_INTERVAL);
     });
 
@@ -295,11 +256,6 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                     if pinned {
                         let _ = window.set_focus();
                     }
-                }
-                "update" => {
-                    let handle = app.clone();
-                    let item = update_ref.clone();
-                    tauri::async_runtime::spawn(async move { tray_install(handle, item).await });
                 }
                 "quit" => app.exit(0),
                 _ => {}

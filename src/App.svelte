@@ -26,6 +26,7 @@
   import { maxTopicsPerPage } from './lib/layout';
   import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
   import { runNotifications } from './lib/notify';
+  import { installUpdate, onUpdateAvailable } from './lib/system';
   import { theme } from './lib/theme';
   import type { NewTask, Task } from './lib/types';
 
@@ -145,6 +146,26 @@
     Math.round((screenHeight * theme.layout.maxHeightFraction) / (view.zoom || 1)) - chromeHeight
   );
 
+  /**
+   * 새 버전이 있으면 위젯이 직접 한 줄로 알립니다.
+   *
+   * 예전에는 트레이 메뉴 글자가 바뀌는 것이 유일한 통로였습니다. 열어 봐야
+   * 보이고, 열어 볼 이유를 모르는 사람에게는 없는 것과 같았습니다. 시작할 때와
+   * 6시간마다 같은 확인이 도니, 이 한 줄이 '켜져 있을 때'와 '껐다 켰을 때'를
+   * 함께 덮습니다.
+   *
+   * 이 세션에서 닫으면 다시 띄우지 않습니다. 업데이트는 급한 일이 아니고,
+   * 급하지 않은 것이 계속 말을 걸면 그때부터 잡음입니다.
+   */
+  let available = $state<string | null>(null);
+  let installing = $state(false);
+
+  $effect(() => {
+    let stop: (() => void) | undefined;
+    void onUpdateAvailable((v) => (available = v)).then((fn) => (stop = fn));
+    return () => stop?.();
+  });
+
   /** 알림·시스템 설정. 파일에서 읽어 오고, 바꾸면 바로 저장합니다 */
   let settings = $state<Settings>({ ...DEFAULTS });
 
@@ -167,7 +188,7 @@
    */
   $effect(() => {
     const at = store.now;
-    void runNotifications(store.tasks, settings, at);
+    void runNotifications(store.tasks, store.categories, settings, at);
   });
 
   /**
@@ -464,6 +485,20 @@
       />
     {/if}
 
+    {#if available}
+      <div class="undo notice">
+        <span class="done-title">새 버전 v{available}</span>
+        <button
+          disabled={installing}
+          onclick={() => {
+            installing = true;
+            void installUpdate().catch(() => (installing = false));
+          }}>{installing ? '설치 중…' : '설치'}</button
+        >
+        <button class="dismiss" aria-label="닫기" onclick={() => (available = null)}>✕</button>
+      </div>
+    {/if}
+
     {#if toast}
       <div class="undo">
         <span class="done-title">완료 · {toast.title}</span>
@@ -609,6 +644,22 @@
 
   /* 팝업은 7초 뒤 사라지지만 Ctrl+Z는 계속 듣습니다.
      그 사실을 알 방법이 여기 적어두는 것 말고는 없습니다. */
+  /* 되돌리기 팝업과 같은 자리, 같은 모양. 다만 재촉하지 않도록 색은 씁니다 */
+  .notice {
+    border-color: rgba(160, 150, 255, 0.35);
+  }
+
+  .dismiss {
+    padding: 4px 8px !important;
+    color: rgba(255, 255, 255, 0.6) !important;
+    background: transparent !important;
+    border-color: transparent !important;
+  }
+
+  .dismiss:hover {
+    color: #fff !important;
+  }
+
   .undo kbd {
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 10px;

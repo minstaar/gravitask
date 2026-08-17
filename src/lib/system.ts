@@ -9,6 +9,7 @@
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export const UPDATE_PROGRESS = 'gravitask://update-progress';
+export const UPDATE_AVAILABLE = 'gravitask://update-available';
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
   if (!inTauri) return null;
@@ -45,4 +46,19 @@ export async function onUpdateProgress(
   if (!inTauri) return () => {};
   const { listen } = await import('@tauri-apps/api/event');
   return listen<number | null>(UPDATE_PROGRESS, (e) => handler(e.payload));
+}
+
+/**
+ * 배경 확인이 새 버전을 찾으면 알려 줍니다.
+ *
+ * 예전에는 트레이 메뉴 글자를 바꾸는 것이 유일한 통로였습니다. 그런데 트레이
+ * 메뉴는 열어 봐야 보이고, 열어 볼 이유를 모르는 사람에게는 없는 것과
+ * 같습니다. 위젯이 직접 한 줄로 말하는 편이 낫습니다.
+ */
+export async function onUpdateAvailable(
+  handler: (version: string) => void
+): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<string>(UPDATE_AVAILABLE, (e) => handler(e.payload));
 }
