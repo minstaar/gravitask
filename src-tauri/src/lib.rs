@@ -1,4 +1,5 @@
 mod desktop;
+mod ics;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -206,6 +207,25 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// 구독한 캘린더를 읽어 회차 목록으로 돌려줍니다.
+///
+/// 지난 것을 얼마나 남길지는 프런트가 정합니다. 무한정 펴면 매주 있는 수업이
+/// 학기 내내 쌓이고, 아예 안 남기면 어제 놓친 것이 조용히 사라집니다.
+#[tauri::command]
+async fn fetch_calendar(
+    url: String,
+    back_days: i64,
+    ahead_days: i64,
+) -> Result<Vec<ics::Occurrence>, String> {
+    let text = ics::fetch(&url).await?;
+    let now = chrono::Utc::now();
+    Ok(ics::expand(
+        &text,
+        now - chrono::Duration::days(back_days.clamp(0, 365)),
+        now + chrono::Duration::days(ahead_days.clamp(1, 730)),
+    ))
+}
+
 /// 위젯은 다른 창 뒤에 깔리고 작업표시줄에도 뜨지 않습니다. 되찾을 수단이
 /// 없으면 사용자 입장에서는 앱이 사라진 것과 구분되지 않습니다.
 fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
@@ -308,7 +328,8 @@ pub fn run() {
             check_update,
             install_update,
             autostart_enabled,
-            set_autostart
+            set_autostart,
+            fetch_calendar
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
