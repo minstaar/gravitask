@@ -103,7 +103,7 @@
 
   /** '3분 전' 정도면 충분합니다. 정확한 시각을 알고 싶은 값이 아닙니다 */
   function ago(at: number | null): string {
-    if (!at) return '아직';
+    if (!at) return '못 받음';
     const m = Math.floor((Date.now() - at) / 60000);
     if (m < 1) return '방금';
     if (m < 60) return `${m}분 전`;
@@ -393,18 +393,22 @@
         캘린더 하나가 주제 하나입니다. 주제를 나누는 기준을 사용자가 이미
         캘린더 쪽에서 정해 두었으니, 그걸 그대로 씁니다.
       -->
+      <!--
+        실패했으면 사유를 그대로 적습니다. '실패'만 보이면 무엇을 고쳐야 할지
+        알 방법이 없습니다 — 주소가 틀린 건지, 캘린더가 비공개인 건지, 네트워크가
+        끊긴 건지에 따라 할 일이 전혀 다릅니다.
+      -->
       {#each calendars as cal (cal.id)}
         <div class="row sub">
-          <span class="label" title={cal.error ?? ''}>
-            {nameOf(cal.categoryId)} · {maskUrl(cal.url)}
-          </span>
-          <span class="status" class:stale={!!cal.error}>
-            {cal.error ? '실패' : ago(cal.syncedAt)}
-          </span>
+          <span class="label">{nameOf(cal.categoryId)} · {maskUrl(cal.url)}</span>
+          <span class="status" class:stale={!!cal.error}>{ago(cal.syncedAt)}</span>
           <button class="danger" aria-label="구독 해지" onclick={() => onRemoveCalendar(cal.id)}>
             해지
           </button>
         </div>
+        {#if cal.error}
+          <div class="row why"><span>{cal.error}</span></div>
+        {/if}
       {/each}
 
       <div class="row">
@@ -622,6 +626,17 @@
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  /* 사유는 한 줄 통째로 씁니다. 줄여 봤자 무엇을 고칠지 알 수 없게 됩니다 */
+  .why {
+    padding-left: 12px;
+  }
+
+  .why span {
+    font-size: var(--fs-meta);
+    color: var(--deadline);
+    line-height: 1.35;
   }
 
   .status.stale {

@@ -45,15 +45,36 @@ pub async fn fetch(url: &str) -> Result<String, String> {
         .replacen("webcal://", "https://", 1)
         .replacen("webcals://", "https://", 1);
 
+    if !normalized.starts_with("http://") && !normalized.starts_with("https://") {
+        return Err("주소는 https:// 또는 webcal:// 로 시작해야 합니다".to_string());
+    }
+
     let response = reqwest::Client::new()
         .get(&normalized)
         .header("User-Agent", "Gravitask")
         .send()
         .await
-        .map_err(|e| format!("가져오지 못했습니다: {e}"))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "시간이 초과됐습니다. 연결 상태를 확인해 주세요.".to_string()
+            } else if e.is_connect() {
+                "연결하지 못했습니다. 인터넷이 끊겨 있거나 주소의 호스트가 잘못됐습니다.".to_string()
+            } else {
+                format!("가져오지 못했습니다: {e}")
+            }
+        })?;
 
-    if !response.status().is_success() {
-        return Err(format!("캘린더가 {}로 답했습니다", response.status()));
+    // 무엇을 고쳐야 할지 답에 담습니다. 상태 코드만 적으면 사용자는 주소가
+    // 틀린 건지 캘린더가 비공개인 건지 알 수 없고, 둘은 할 일이 전혀 다릅니다.
+    let status = response.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            404 => "주소를 찾을 수 없습니다. 공개 주소를 넣으셨다면, 그 캘린더가 '일반에게 공개'로 설정돼 있어야 합니다. 아니라면 비공개 주소를 쓰세요."
+                .to_string(),
+            401 | 403 => "접근이 거부됐습니다. 비공개 주소를 재설정했다면 새 주소로 바꿔야 합니다."
+                .to_string(),
+            _ => format!("캘린더가 {status}로 답했습니다"),
+        });
     }
 
     response
