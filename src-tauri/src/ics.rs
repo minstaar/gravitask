@@ -192,6 +192,15 @@ fn to_instant(prop: &Prop) -> Option<(DateTime<Utc>, bool)> {
     Some((local_to_utc(naive, prop.params.get("TZID")), false))
 }
 
+/// DATE 형태(종일)일 때만 날짜를 꺼냅니다. 시각이 있는 값이면 None입니다.
+fn to_date(prop: &Prop) -> Option<NaiveDate> {
+    let raw = prop.value.trim();
+    if prop.params.get("VALUE").map(|v| v.as_str()) == Some("DATE") || raw.len() == 8 {
+        return NaiveDate::parse_from_str(raw, "%Y%m%d").ok();
+    }
+    None
+}
+
 /// TZID가 있으면 그 시간대로, 없으면 기기 시간대로 봅니다.
 fn local_to_utc(naive: NaiveDateTime, tzid: Option<&String>) -> DateTime<Utc> {
     if let Some(tz) = tzid.and_then(|t| t.parse::<Tz>().ok()) {
@@ -213,6 +222,9 @@ struct Event {
     summary: Option<String>,
     start: Option<(DateTime<Utc>, bool)>,
     due: Option<(DateTime<Utc>, bool)>,
+    /// 종일 일정의 시작·끝 날짜. 며칠짜리인지 재는 데만 씁니다
+    start_date: Option<NaiveDate>,
+    end_date: Option<NaiveDate>,
     rrule_lines: Vec<String>,
     cancelled: bool,
 }
@@ -255,7 +267,11 @@ pub fn expand_at(
         match name.as_str() {
             "UID" => event.uid = Some(prop.value.clone()),
             "SUMMARY" => event.summary = Some(unescape(&prop.value)),
-            "DTSTART" => event.start = to_instant(&prop),
+            "DTSTART" => {
+                event.start = to_instant(&prop);
+                event.start_date = to_date(&prop);
+            }
+            "DTEND" => event.end_date = to_date(&prop),
             "DUE" => event.due = to_instant(&prop),
             "STATUS" => event.cancelled = prop.value.eq_ignore_ascii_case("CANCELLED"),
             "RRULE" | "EXDATE" | "RDATE" => {
@@ -299,6 +315,21 @@ fn collect(
     };
     let title = event.summary.unwrap_or_else(|| "(제목 없음)".to_string());
 
+    /*
+     * 며칠에 걸친 종일 일정은 마지막 날이 마감입니다.
+     *
+     * 규칙은 하나입니다 — '아직 늦지 않은 마지막 순간'. 8/21~8/23 시험 기간은
+     * 8/23이 끝나야 지난 것이지, 8/21 밤에 지난 것이 아닙니다. 첫날로 잡으면
+     * 기간 중에 내내 마감선 아래에 가라앉아 있습니다.
+     *
+     * iCalendar에서 종일 일정의 DTEND는 '그날은 포함하지 않는' 값이라
+     * 하루를 빼야 마지막 날이 됩니다.
+     */
+    let extra_days = match (all_day, event.start_date, event.end_date) {
+        (true, Some(from), Some(until)) => ((until - from).num_days() - 1).max(0),
+        _ => 0,
+    };
+
     let repeating = !event.rrule_lines.is_empty();
     let mut starts = if repeating {
         expand_rrule(&event.rrule_lines, anchor, to)
@@ -321,14 +352,17 @@ fn collect(
     }
 
     for start in starts {
-        if start < from || start > to {
+        // 회차를 가리키는 키는 시작 시각으로 만듭니다. 마감을 쓰면 며칠짜리
+        // 일정의 기간이 바뀔 때 같은 회차가 다른 것으로 보입니다.
+        let deadline = start + Duration::days(extra_days);
+        if deadline < from || deadline > to {
             continue;
         }
         out.push(Occurrence {
             uid: uid.clone(),
             occurrence_key: format!("{uid}@{}", start.timestamp_millis()),
             title: title.clone(),
-            due: start.timestamp_millis(),
+            due: deadline.timestamp_millis(),
             all_day,
         });
     }
@@ -439,6 +473,37 @@ END:VCALENDAR\r\n";
 
         let local = chrono::Local.timestamp_millis_opt(day.due).unwrap();
         assert_eq!(local.format("%H:%M").to_string(), "23:59");
+    }
+
+    /// 며칠에 걸친 종일 일정은 마지막 날이 마감입니다.
+    ///
+    /// 규칙은 하나 — '아직 늦지 않은 마지막 순간'. 8/21~8/23 시험 기간은 8/23이
+    /// 끝나야 지난 것이지 8/21 밤에 지난 것이 아닙니다. 첫날로 잡으면 기간 내내
+    /// 마감선 아래에 가라앉아 있습니다.
+    #[test]
+    fn 여러_날_종일_일정은_마지막_날이_마감이다() {
+        // DTEND는 그날을 포함하지 않으므로 8/24는 곧 8/23까지를 뜻합니다
+        let span = "BEGIN:VCALENDAR\n\nBEGIN:VEVENT\n\nUID:exam\n\nSUMMARY:시험 기간\n\nDTSTART;VALUE=DATE:20260821\n\nDTEND;VALUE=DATE:20260824\n\nEND:VEVENT\n\nEND:VCALENDAR\n\n";
+        let now = at("2026-08-01T00:00:00Z");
+        let all = expand_at(span, now, at("2026-10-01T00:00:00Z"), now);
+        let one = all.first().expect("일정이 없습니다");
+
+        let local = chrono::Local.timestamp_millis_opt(one.due).unwrap();
+        assert_eq!(local.format("%m/%d %H:%M").to_string(), "08/23 23:59");
+    }
+
+    /// 시각이 있는 여러 날 일정은 시작이 마감입니다. 컨퍼런스에 이튿날 가면
+    /// 이미 놓친 것이지, 마지막 날까지 여유가 있는 것이 아닙니다.
+    #[test]
+    fn 시각_있는_여러_날_일정은_시작이_마감이다() {
+        let conf = "BEGIN:VCALENDAR\n\nBEGIN:VEVENT\n\nUID:conf\n\nSUMMARY:학회\n\nDTSTART:20260821T010000Z\n\nDTEND:20260823T080000Z\n\nEND:VEVENT\n\nEND:VCALENDAR\n\n";
+        let now = at("2026-08-01T00:00:00Z");
+        let all = expand_at(conf, now, at("2026-10-01T00:00:00Z"), now);
+        assert_eq!(
+            all[0].due,
+            at("2026-08-21T01:00:00Z").timestamp_millis(),
+            "시작 시각이 아닌 값이 마감으로 잡혔습니다"
+        );
     }
 
     #[test]
