@@ -105,12 +105,28 @@
    * 시와 분을 따로 고릅니다.
    *
    * 흔한 시각만 늘어놓으면 목록에 없는 시각을 아예 지정할 수 없습니다.
-   * 두 열로 나누면 어떤 시각이든 두 번의 클릭으로 닿습니다. 분은 5분 간격에
-   * 하루 끝인 59분을 더합니다 — 마감을 1분 단위로 맞출 일은 없습니다.
+   * 두 열로 나누면 어떤 시각이든 두 번의 클릭으로 닿습니다.
+   *
+   * 분은 60줄을 다 놓습니다. 예전에는 5분 간격에 59분만 더했는데, 그러면
+   * "23분"이라고 적으면 되는 것이 직접 고를 때는 안 되는 상태가 됩니다.
+   * 같은 앱에서 한쪽 길로는 되고 다른 길로는 안 되는 것이 5분이라는 눈금보다
+   * 나쁩니다. 위의 '어떤 시각이든'도 그제서야 사실이 됩니다.
    */
   const HOURS = Array.from({ length: 24 }, (_, h) => pad(h));
-  const MINUTES = [...Array.from({ length: 12 }, (_, i) => pad(i * 5)), '59'];
+  const MINUTES = Array.from({ length: 60 }, (_, m) => pad(m));
   const QUICK_TIMES = ['09:00', '12:00', '18:00', '23:59'];
+
+  /**
+   * 열자마자 지금 값이 보이도록 목록을 감아 둡니다.
+   *
+   * 분이 60줄이 되면서 필요해졌습니다. 23분을 고르려고 목록 한복판까지 굴려
+   * 내려가야 한다면, 고를 수 있다는 것과 고를 만하다는 것은 다른 이야기가
+   * 됩니다. 시 열도 같은 이유로 그동안 늦은 시각이 접혀 있었습니다.
+   */
+  function revealSelected(node: HTMLElement) {
+    const on = node.querySelector<HTMLElement>('.unit.on');
+    if (on) node.scrollTop = on.offsetTop - (node.clientHeight - on.offsetHeight) / 2;
+  }
 
   const curHour = $derived(timeValue.slice(0, 2));
   const curMin = $derived(timeValue.slice(3, 5));
@@ -305,7 +321,7 @@
           <div class="cols">
             <div class="col" role="listbox" aria-label="시">
               <span class="colhead">시</span>
-              <div class="scroll">
+              <div class="scroll" use:revealSelected>
                 {#each HOURS as h (h)}
                   <button
                     type="button"
@@ -323,7 +339,7 @@
 
             <div class="col" role="listbox" aria-label="분">
               <span class="colhead">분</span>
-              <div class="scroll">
+              <div class="scroll" use:revealSelected>
                 {#each MINUTES as m (m)}
                   <button
                     type="button"
@@ -612,7 +628,8 @@
   .times {
     padding: 8px;
     gap: 7px;
-    width: 176px;
+    /* 목록 좌우로 내준 4px씩만큼 넓힙니다. 숫자 칸은 있던 크기 그대로입니다 */
+    width: 192px;
   }
 
   .cols {
@@ -635,14 +652,19 @@
   }
 
   /* 선택된 값이 보이도록 목록을 스크롤로 두되, 높이를 낮춰
-     팝오버가 위젯보다 커지지 않게 합니다. */
+     팝오버가 위젯보다 커지지 않게 합니다.
+     position은 revealSelected가 offsetTop을 이 상자 기준으로 읽기 위한 것입니다. */
   .scroll {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 2px;
     max-height: 152px;
     overflow-y: auto;
     scrollbar-width: thin;
+    /* 세로만 스크롤로 두어도 가로까지 잘립니다. 초점 테두리가 들어설
+       4px을 남깁니다 — 설정 패널의 잘린 테두리와 같은 병입니다. */
+    padding-inline: 4px;
   }
 
   .unit {
