@@ -31,10 +31,21 @@ pub struct Occurrence {
     pub all_day: bool,
 }
 
-/// 하루짜리 일정을 몇 시로 볼 것인가.
+/// 종일 일정을 몇 시로 볼 것인가.
 ///
-/// 그날의 끝으로 봅니다. 종일 일정은 대개 "그날까지"라는 뜻이지 "그날 아침"이
-/// 아닙니다. 09:00으로 잡으면 아침에 이미 지난 것으로 표시됩니다.
+/// 규칙은 하나입니다 — **마감은 일정이 시작되는 순간이다. 다만 시작이 '날'
+/// 단위로만 정해져 있으면 그날이 끝날 때까지가 여유다.**
+///
+/// 이 하나로 네 경우가 다 설명됩니다.
+///  - 14:00 회의 → 14:00
+///  - 8/21 종일 → 8/21 23:59 (하루가 통째로 남아 있는데 아침에 지난 일로
+///    만들면 안 됩니다)
+///  - 8/21~8/23 시험 기간 → 8/21 23:59 (준비가 끝나 있어야 하는 날은 시작일이고,
+///    끝나는 날은 아무 행동도 요구하지 않습니다)
+///  - 8/21~8/23 학회(시각 있음) → 8/21 시작 시각
+///
+/// 한때 며칠짜리를 마지막 날로 잡았는데, 그러면 시험 첫날에 위젯이 "아직 이틀
+/// 남음"이라고 말합니다. 이미 시험 중인데도요.
 const ALL_DAY_HOUR: u32 = 23;
 const ALL_DAY_MIN: u32 = 59;
 
@@ -192,15 +203,6 @@ fn to_instant(prop: &Prop) -> Option<(DateTime<Utc>, bool)> {
     Some((local_to_utc(naive, prop.params.get("TZID")), false))
 }
 
-/// DATE 형태(종일)일 때만 날짜를 꺼냅니다. 시각이 있는 값이면 None입니다.
-fn to_date(prop: &Prop) -> Option<NaiveDate> {
-    let raw = prop.value.trim();
-    if prop.params.get("VALUE").map(|v| v.as_str()) == Some("DATE") || raw.len() == 8 {
-        return NaiveDate::parse_from_str(raw, "%Y%m%d").ok();
-    }
-    None
-}
-
 /// TZID가 있으면 그 시간대로, 없으면 기기 시간대로 봅니다.
 fn local_to_utc(naive: NaiveDateTime, tzid: Option<&String>) -> DateTime<Utc> {
     if let Some(tz) = tzid.and_then(|t| t.parse::<Tz>().ok()) {
@@ -222,9 +224,6 @@ struct Event {
     summary: Option<String>,
     start: Option<(DateTime<Utc>, bool)>,
     due: Option<(DateTime<Utc>, bool)>,
-    /// 종일 일정의 시작·끝 날짜. 며칠짜리인지 재는 데만 씁니다
-    start_date: Option<NaiveDate>,
-    end_date: Option<NaiveDate>,
     rrule_lines: Vec<String>,
     cancelled: bool,
 }
@@ -267,11 +266,7 @@ pub fn expand_at(
         match name.as_str() {
             "UID" => event.uid = Some(prop.value.clone()),
             "SUMMARY" => event.summary = Some(unescape(&prop.value)),
-            "DTSTART" => {
-                event.start = to_instant(&prop);
-                event.start_date = to_date(&prop);
-            }
-            "DTEND" => event.end_date = to_date(&prop),
+            "DTSTART" => event.start = to_instant(&prop),
             "DUE" => event.due = to_instant(&prop),
             "STATUS" => event.cancelled = prop.value.eq_ignore_ascii_case("CANCELLED"),
             "RRULE" | "EXDATE" | "RDATE" => {
@@ -315,20 +310,7 @@ fn collect(
     };
     let title = event.summary.unwrap_or_else(|| "(제목 없음)".to_string());
 
-    /*
-     * 며칠에 걸친 종일 일정은 마지막 날이 마감입니다.
-     *
-     * 규칙은 하나입니다 — '아직 늦지 않은 마지막 순간'. 8/21~8/23 시험 기간은
-     * 8/23이 끝나야 지난 것이지, 8/21 밤에 지난 것이 아닙니다. 첫날로 잡으면
-     * 기간 중에 내내 마감선 아래에 가라앉아 있습니다.
-     *
-     * iCalendar에서 종일 일정의 DTEND는 '그날은 포함하지 않는' 값이라
-     * 하루를 빼야 마지막 날이 됩니다.
-     */
-    let extra_days = match (all_day, event.start_date, event.end_date) {
-        (true, Some(from), Some(until)) => ((until - from).num_days() - 1).max(0),
-        _ => 0,
-    };
+
 
     let repeating = !event.rrule_lines.is_empty();
     let mut starts = if repeating {
@@ -352,17 +334,14 @@ fn collect(
     }
 
     for start in starts {
-        // 회차를 가리키는 키는 시작 시각으로 만듭니다. 마감을 쓰면 며칠짜리
-        // 일정의 기간이 바뀔 때 같은 회차가 다른 것으로 보입니다.
-        let deadline = start + Duration::days(extra_days);
-        if deadline < from || deadline > to {
+        if start < from || start > to {
             continue;
         }
         out.push(Occurrence {
             uid: uid.clone(),
             occurrence_key: format!("{uid}@{}", start.timestamp_millis()),
             title: title.clone(),
-            due: deadline.timestamp_millis(),
+            due: start.timestamp_millis(),
             all_day,
         });
     }
@@ -475,13 +454,13 @@ END:VCALENDAR\r\n";
         assert_eq!(local.format("%H:%M").to_string(), "23:59");
     }
 
-    /// 며칠에 걸친 종일 일정은 마지막 날이 마감입니다.
+    /// 며칠에 걸친 종일 일정도 시작하는 날이 마감입니다.
     ///
-    /// 규칙은 하나 — '아직 늦지 않은 마지막 순간'. 8/21~8/23 시험 기간은 8/23이
-    /// 끝나야 지난 것이지 8/21 밤에 지난 것이 아닙니다. 첫날로 잡으면 기간 내내
-    /// 마감선 아래에 가라앉아 있습니다.
+    /// 준비가 끝나 있어야 하는 날은 시작일이고, 끝나는 날은 아무 행동도 요구하지
+    /// 않습니다. 마지막 날로 잡으면 시험 첫날에 위젯이 "아직 이틀 남음"이라고
+    /// 말합니다 — 이미 시험 중인데도요.
     #[test]
-    fn 여러_날_종일_일정은_마지막_날이_마감이다() {
+    fn 여러_날_종일_일정도_시작하는_날이_마감이다() {
         // DTEND는 그날을 포함하지 않으므로 8/24는 곧 8/23까지를 뜻합니다
         let span = "BEGIN:VCALENDAR\n\nBEGIN:VEVENT\n\nUID:exam\n\nSUMMARY:시험 기간\n\nDTSTART;VALUE=DATE:20260821\n\nDTEND;VALUE=DATE:20260824\n\nEND:VEVENT\n\nEND:VCALENDAR\n\n";
         let now = at("2026-08-01T00:00:00Z");
@@ -489,7 +468,7 @@ END:VCALENDAR\r\n";
         let one = all.first().expect("일정이 없습니다");
 
         let local = chrono::Local.timestamp_millis_opt(one.due).unwrap();
-        assert_eq!(local.format("%m/%d %H:%M").to_string(), "08/23 23:59");
+        assert_eq!(local.format("%m/%d %H:%M").to_string(), "08/21 23:59");
     }
 
     /// 시각이 있는 여러 날 일정은 시작이 마감입니다. 컨퍼런스에 이튿날 가면
