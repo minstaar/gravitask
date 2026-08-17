@@ -84,12 +84,90 @@ function resolveDayOfMonth(base: Date, day: number): Date | null {
   return d;
 }
 
+/**
+ * 그 달의 n번째 X요일. nth가 -1이면 마지막 X요일입니다.
+ *
+ * "9월 첫째 주 금요일"에는 읽는 방법이 둘 있습니다 — (가) 9월의 첫 번째
+ * 금요일, (나) 9월이 걸쳐 있는 첫 주(월~일)의 금요일. 대개 같은 날이지만
+ * 달이 주 후반에 시작하면 갈립니다. 2026년 8월 1일은 토요일인데, (나)로
+ * 읽으면 "8월 첫째 주 금요일"이 7월 31일이 됩니다. 8월 일을 적었는데 7월
+ * 날짜가 나오는 것은 누가 봐도 틀린 답입니다.
+ *
+ * 그래서 (가)로 읽습니다. 캘린더의 반복 규칙(BYDAY=1FR)도 같은 뜻입니다.
+ */
+function nthWeekday(year: number, month: number, nth: number, wd: number): Date {
+  const eom = new Date(year, month, 0); // 그 달의 마지막 날
+  const lastOne = new Date(year, month, -((eom.getDay() - wd + 7) % 7));
+  if (nth === -1) return lastOne;
+
+  const first = new Date(year, month - 1, 1);
+  const shift = (wd - first.getDay() + 7) % 7;
+  const d = new Date(year, month - 1, 1 + shift + (nth - 1) * 7);
+
+  /*
+   * 다섯째 주가 없는 달이 있습니다. 그럴 때는 마지막 것으로 당깁니다.
+   *
+   * 규칙을 통째로 버리면 아래의 요일 규칙이 '금요일'만 떼어 가서, "9월
+   * 다섯째 주 금요일"이 8월의 어느 금요일이 되고 제목에는 '9월 다섯째 주'가
+   * 남습니다. 적은 달과 다른 달의 날짜를 내놓느니, 적은 달 안에서 가장
+   * 가까운 날을 내놓는 편이 알아보고 고치기 쉽습니다.
+   */
+  return d.getMonth() === month - 1 ? d : lastOne;
+}
+
+/** 달을 안 적었으면 이번 달, 이미 지났으면 다음 달(적었으면 내년)로 */
+function resolveNthWeekday(
+  base: Date,
+  month: number | null,
+  nth: number,
+  wd: number
+): Date | null {
+  const today = startOfDay(base);
+
+  if (month !== null) {
+    if (month < 1 || month > 12) return null;
+    const d = nthWeekday(today.getFullYear(), month, nth, wd);
+    if (d >= today) return d;
+    return nthWeekday(today.getFullYear() + 1, month, nth, wd);
+  }
+
+  const d = nthWeekday(today.getFullYear(), today.getMonth() + 1, nth, wd);
+  if (d >= today) return d;
+
+  const next = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  return nthWeekday(next.getFullYear(), next.getMonth() + 1, nth, wd);
+}
+
+const NTH_WORDS: Record<string, number> = {
+  마지막: -1,
+  막: -1,
+  첫째: 1, 첫: 1, 한: 1, '1': 1,
+  둘째: 2, 둘: 2, 두: 2, '2': 2,
+  셋째: 3, 셋: 3, 세: 3, '3': 3,
+  넷째: 4, 넷: 4, 네: 4, '4': 4,
+  다섯째: 5, 다섯: 5, '5': 5,
+};
+
 /* ---------- 날짜 매칭 ---------- */
 
 type DateRule = { re: RegExp; make: (m: RegExpMatchArray, now: Date) => Date | null };
 
 // 구체적인 패턴이 먼저 와야 합니다. "3일 뒤"가 "3일"보다 앞서야 하는 식.
 const DATE_RULES: DateRule[] = [
+  /**
+   * "9월 첫 번째 주 금요일", "마지막주 수요일".
+   *
+   * 가장 먼저 봅니다. 아래의 요일 규칙이 "금요일"만 떼어 가면 '9월 첫 주'가
+   * 통째로 제목에 남습니다.
+   *
+   * '요일'을 반드시 적게 한 것은 "1주일 뒤" 때문입니다. 요일을 한 글자만
+   * 받으면 그 '일'을 일요일로 읽어 "첫째 주 일요일"이 되어 버립니다.
+   */
+  {
+    re: /(?:(\d{1,2})\s*월\s*)?(마지막|막|다섯째|다섯|첫째|첫|둘째|둘|두|셋째|셋|세|넷째|넷|네|[1-5])\s*(?:번째|째)?\s*주\s*차?\s*(?:의\s*)?([일월화수목금토])요일/,
+    make: (m, n) =>
+      resolveNthWeekday(n, m[1] ? +m[1] : null, NTH_WORDS[m[2]], WEEKDAYS.indexOf(m[3])),
+  },
   { re: /(\d{1,2})\s*월\s*(\d{1,2})\s*일/, make: (m, n) => resolveMonthDay(n, +m[1], +m[2]) },
   {
     re: /(?<![\d:])(\d{1,2})\s*[/.\-]\s*(\d{1,2})(?![\d:])/,
@@ -110,6 +188,9 @@ const DATE_RULES: DateRule[] = [
   { re: /(?:이번\s*달|이달|금월)\s*말|월말/, make: (_m, n) => lastDayOfMonth(n) },
   { re: /(?:다음|담)\s*달/, make: (_m, n) => addDays(lastDayOfMonth(n), 1) },
   { re: /(\d+)\s*주\s*(?:뒤|후|있다가)/, make: (m, n) => addDays(startOfDay(n), +m[1] * 7) },
+  // "2주 뒤"는 위에서 받지만 "2주일 뒤"는 '주' 뒤에 '일'이 붙어 걸리지 않습니다.
+  // 다른 자리는 모두 숫자를 받는데 여기만 한글 '일주일'만 받고 있었습니다.
+  { re: /(\d+)\s*주일\s*(?:뒤|후|있다가)/, make: (m, n) => addDays(startOfDay(n), +m[1] * 7) },
   { re: /일\s*주일\s*(?:뒤|후)|일주일\s*(?:뒤|후)/, make: (_m, n) => addDays(startOfDay(n), 7) },
   { re: /(\d+)\s*일\s*(?:뒤|후|있다가)/, make: (m, n) => addDays(startOfDay(n), +m[1]) },
   { re: /내일\s*모레|모레/, make: (_m, n) => addDays(startOfDay(n), 2) },
