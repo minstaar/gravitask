@@ -133,8 +133,6 @@
   let newTopic = $state('');
   let addingTopic = $state(false);
 
-  const chosenTopic = $derived(calTopic || categories[0]?.id || '');
-
   function pickTopic(id: string) {
     calTopic = id;
     topicOpen = false;
@@ -153,7 +151,7 @@
 
   async function submitCalendar() {
     const url = calUrl.trim();
-    const topic = chosenTopic;
+    const topic = calTopic;
     if (!url || !topic || calBusy) return;
     calBusy = true;
     try {
@@ -391,12 +389,10 @@
         할지 알 방법이 없고, 구글과 애플은 부르는 이름조차 다릅니다.
       -->
       <p class="guide">
-        <strong>구글</strong> 캘린더 설정 → 해당 캘린더 → <em>비공개 주소(ICS)</em> 복사<br />
-        <strong>애플</strong> 캘린더 앱에서 캘린더 옆 ⓘ → <em>공용 캘린더</em> 켜기 → 링크 공유
-      </p>
-      <p class="guide warn">
-        이 주소를 아는 사람은 그 캘린더를 전부 읽을 수 있습니다. Windows 자격 증명
-        저장소에 넣어 두며, 설정 파일에는 남지 않습니다.
+        <strong>구글</strong> 캘린더 설정 → 내 캘린더의 설정 → 캘린더 통합 →
+        <em>iCal 형식의 비공개 주소</em> 복사<br />
+        <strong>애플</strong> 캘린더 앱 → 캘린더 목록 → 캘린더 옆 ⓘ →
+        <em>공개 캘린더</em> 켜기 → 링크 공유
       </p>
 
       {#each calendars as cal (cal.id)}
@@ -423,14 +419,22 @@
         />
       </div>
 
-      <!-- 주제 고르기. 제자리에서 펼칩니다 — 떠오르면 잘린 창 밖으로 나갑니다 -->
+      <!--
+        주제 고르기. 제자리에서 펼칩니다 — 떠오르면 잘린 창 밖으로 나갑니다.
+
+        고르기 전에는 등록을 막습니다. 버튼이 '주제 선택'이라고 해놓고 몰래
+        첫 주제에 넣으면, 나중에 엉뚱한 레인에서 일정을 찾게 됩니다.
+      -->
       <div class="row">
-        <span class="label">어느 주제로</span>
         <button class="nudge topic" onclick={() => (topicOpen = !topicOpen)}>
-          {nameOf(chosenTopic)}
+          {calTopic ? nameOf(calTopic) : '주제 선택'}
           <span class="caret" class:up={topicOpen}>▾</span>
         </button>
-        <button class="add" disabled={!calUrl.trim() || calBusy} onclick={() => void submitCalendar()}>
+        <button
+          class="add"
+          disabled={!calUrl.trim() || !calTopic || calBusy}
+          onclick={() => void submitCalendar()}
+        >
           {calBusy ? '받는 중…' : '등록'}
         </button>
       </div>
@@ -438,7 +442,7 @@
       {#if topicOpen}
         <div class="options">
           {#each categories as c (c.id)}
-            <button class="option" class:on={c.id === chosenTopic} onclick={() => pickTopic(c.id)}>
+            <button class="option" class:on={c.id === calTopic} onclick={() => pickTopic(c.id)}>
               {c.name}
             </button>
           {/each}
@@ -459,7 +463,7 @@
               <button class="nudge" disabled={!newTopic.trim()} onclick={confirmNewTopic}>확인</button>
             </div>
           {:else}
-            <button class="option new" onclick={() => (addingTopic = true)}>＋ 새 주제</button>
+            <button class="option new" onclick={() => (addingTopic = true)}>＋ 주제 추가</button>
           {/if}
         </div>
       {/if}
@@ -467,7 +471,7 @@
       {#if calendars.length > 0}
         <div class="row">
           <span class="label">20분마다 자동으로 갱신됩니다</span>
-          <button class="danger action" onclick={onSyncCalendars}>갱신</button>
+          <button class="danger action" onclick={onSyncCalendars}>지금 갱신</button>
         </div>
       {/if}
 
@@ -734,10 +738,6 @@
   .guide em {
     font-style: normal;
     color: var(--text);
-  }
-
-  .guide.warn {
-    color: rgba(224, 86, 111, 0.85);
   }
 
   /* 주제 고르기 — 앱의 다른 버튼과 같은 모양을 씁니다 */
