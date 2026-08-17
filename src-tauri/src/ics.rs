@@ -38,6 +38,16 @@ pub struct Occurrence {
 const ALL_DAY_HOUR: u32 = 23;
 const ALL_DAY_MIN: u32 = 59;
 
+/// 반복 일정 하나가 앞으로 내놓을 수 있는 회차 수.
+///
+/// 일회성 마감은 넉 달 앞이라도 봐야 합니다 — 논문 마감이 그렇습니다. 그런데
+/// 반복 일정에 같은 잣대를 대면 매주 있는 수업 하나가 열일곱 장이 됩니다.
+/// 15주 뒤 수업은 지금 아무것도 바꾸지 않으므로 자리만 먹습니다.
+///
+/// 다음 것과 그다음 것까지만 둡니다. 하나만 두면 이번 것을 끝낸 순간 그 과목이
+/// 화면에서 사라져 다음이 언제인지 알 수 없고, 둘이면 늘 하나는 남습니다.
+const MAX_UPCOMING_PER_SERIES: usize = 2;
+
 /// 캘린더 주소를 두는 곳.
 ///
 /// 비공개 ICS 주소는 사실상 비밀번호입니다 — 그 주소를 아는 사람은 캘린더
@@ -212,6 +222,16 @@ struct Event {
 /// `from`~`to` 바깥은 버립니다. 지난 것을 얼마나 남길지는 부르는 쪽이 정합니다 —
 /// 무한정 펴면 매주 있는 수업이 학기 내내 쌓입니다.
 pub fn expand(text: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Occurrence> {
+    expand_at(text, from, to, Utc::now())
+}
+
+/// `now`를 받는 판. 테스트가 시계에 기대지 않게 합니다.
+pub fn expand_at(
+    text: &str,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Vec<Occurrence> {
     let unfolded = unfold(text);
     let mut out = Vec::new();
     let mut current: Option<Event> = None;
@@ -224,7 +244,7 @@ pub fn expand(text: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Occurre
         }
         if line.eq_ignore_ascii_case("END:VEVENT") {
             if let Some(event) = current.take() {
-                collect(event, from, to, &mut out);
+                collect(event, from, to, now, &mut out);
             }
             continue;
         }
@@ -261,7 +281,13 @@ fn unescape(value: &str) -> String {
         .to_string()
 }
 
-fn collect(event: Event, from: DateTime<Utc>, to: DateTime<Utc>, out: &mut Vec<Occurrence>) {
+fn collect(
+    event: Event,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    now: DateTime<Utc>,
+    out: &mut Vec<Occurrence>,
+) {
     if event.cancelled {
         return;
     }
@@ -273,11 +299,26 @@ fn collect(event: Event, from: DateTime<Utc>, to: DateTime<Utc>, out: &mut Vec<O
     };
     let title = event.summary.unwrap_or_else(|| "(제목 없음)".to_string());
 
-    let starts = if event.rrule_lines.is_empty() {
-        vec![anchor]
-    } else {
+    let repeating = !event.rrule_lines.is_empty();
+    let mut starts = if repeating {
         expand_rrule(&event.rrule_lines, anchor, to)
+    } else {
+        vec![anchor]
     };
+    starts.sort();
+
+    // 반복 일정은 앞으로 올 것 중 몇 개만 남깁니다. 지난 회차는 그대로 두는데,
+    // 놓친 수업은 개수가 아니라 창(from)이 이미 제한하고 있습니다.
+    if repeating {
+        let mut upcoming = 0;
+        starts.retain(|start| {
+            if *start < now {
+                return true;
+            }
+            upcoming += 1;
+            upcoming <= MAX_UPCOMING_PER_SERIES
+        });
+    }
 
     for start in starts {
         if start < from || start > to {
@@ -342,19 +383,52 @@ END:VCALENDAR\r\n";
         assert!(all.iter().all(|o| o.uid != "gone"), "취소된 일정이 들어왔습니다");
     }
 
+    /// 주간 수업이 넉 달치로 펴지지 않아야 합니다.
+    ///
+    /// 일회성 마감은 넉 달 앞도 봐야 하지만, 매주 있는 수업까지 그렇게 펴면
+    /// 과목 하나가 열일곱 장이 됩니다. 15주 뒤 수업은 지금 아무것도 바꾸지
+    /// 않으므로 자리만 먹습니다.
+    #[test]
+    fn 반복_일정은_다가오는_몇_회차만_내놓는다() {
+        // 8/17부터 매주, 종료 없음 — 그냥 두면 넉 달치가 나옵니다
+        let endless = "BEGIN:VCALENDAR\r\n\r\nBEGIN:VEVENT\r\n\r\nUID:class\r\n\r\nSUMMARY:자료구조\r\n\r\nDTSTART:20260817T010000Z\r\n\r\nRRULE:FREQ=WEEKLY\r\n\r\nEND:VEVENT\r\n\r\nEND:VCALENDAR\r\n\r\n";
+
+        let now = at("2026-08-18T00:00:00Z");
+        let all = expand_at(
+            endless,
+            now - Duration::days(7),
+            now + Duration::days(120),
+            now,
+        );
+
+        let upcoming = all.iter().filter(|o| o.due > now.timestamp_millis()).count();
+        assert_eq!(
+            upcoming, MAX_UPCOMING_PER_SERIES,
+            "반복 일정이 {upcoming}회차나 나왔습니다"
+        );
+    }
+
+    /// 반복이 아닌 마감은 멀어도 그대로 둡니다 — 논문 마감이 그렇습니다.
+    #[test]
+    fn 일회성_마감은_멀어도_남는다() {
+        let far = "BEGIN:VCALENDAR\r\n\r\nBEGIN:VEVENT\r\n\r\nUID:thesis\r\n\r\nSUMMARY:논문 마감\r\n\r\nDTSTART:20261201T000000Z\r\n\r\nEND:VEVENT\r\n\r\nEND:VCALENDAR\r\n\r\n";
+        let now = at("2026-08-18T00:00:00Z");
+        let all = expand_at(far, now - Duration::days(7), now + Duration::days(120), now);
+        assert_eq!(all.len(), 1, "먼 일회성 마감이 사라졌습니다");
+    }
+
     #[test]
     fn 반복_일정은_회차마다_다른_키를_가진다() {
-        let all = expand(SAMPLE, at("2026-08-01T00:00:00Z"), at("2026-10-01T00:00:00Z"));
+        let now = at("2026-08-01T00:00:00Z");
+        let all = expand_at(SAMPLE, now, at("2026-10-01T00:00:00Z"), now);
         let weekly: Vec<_> = all.iter().filter(|o| o.uid == "weekly").collect();
-        assert_eq!(weekly.len(), 4, "COUNT=4가 네 번으로 펴져야 합니다");
+        assert!(!weekly.is_empty(), "반복 일정이 하나도 안 나왔습니다");
 
+        // 개수가 아니라 겹치지 않는다는 것을 잽니다. 개수는 상한이 정하지만,
+        // 키가 겹치면 한 번 체크에 학기 전체가 완료 처리됩니다.
         let keys: std::collections::HashSet<_> =
             weekly.iter().map(|o| o.occurrence_key.clone()).collect();
-        assert_eq!(
-            keys.len(),
-            4,
-            "회차 키가 겹치면 한 번 체크에 학기 전체가 완료 처리됩니다"
-        );
+        assert_eq!(keys.len(), weekly.len(), "회차 키가 겹칩니다");
     }
 
     #[test]
@@ -370,9 +444,16 @@ END:VCALENDAR\r\n";
     #[test]
     fn 창_바깥은_버린다() {
         // 8월 18일 이후만 봅니다 — 첫 수업(8/17)은 빠져야 합니다
-        let all = expand(SAMPLE, at("2026-08-18T00:00:00Z"), at("2026-10-01T00:00:00Z"));
-        let weekly: Vec<_> = all.iter().filter(|o| o.uid == "weekly").collect();
-        assert_eq!(weekly.len(), 3, "창 밖 회차가 남아 있습니다");
+        let from = at("2026-08-18T00:00:00Z");
+        let all = expand_at(SAMPLE, from, at("2026-10-01T00:00:00Z"), from);
+        assert!(
+            all.iter().all(|o| o.due >= from.timestamp_millis()),
+            "창 밖 회차가 남아 있습니다"
+        );
+        assert!(
+            all.iter().any(|o| o.uid == "weekly"),
+            "창 안의 회차까지 사라졌습니다"
+        );
     }
 
     #[test]
