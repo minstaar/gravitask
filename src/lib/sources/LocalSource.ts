@@ -33,9 +33,20 @@ export class LocalSource implements TaskSource {
     return this.#cache;
   }
 
+  /**
+   * 디스크에 먼저 쓰고, 성공한 뒤에 메모리에 반영합니다.
+   *
+   * 순서가 반대였습니다. 그러면 저장이 실패해도 화면에는 멀쩡히 카드가 뜹니다
+   * — 화면이 읽는 것은 이 캐시니까요. 사용자는 적혔다고 믿고 앱을 닫고,
+   * 다시 켜면 없습니다. 조용히 잃는 것이 가장 나쁜 고장입니다.
+   *
+   * 이 순서면 실패했을 때 카드가 나타나지 않습니다. 적었는데 안 뜨는 것은
+   * 이상하지만 그 자리에서 알아챌 수 있고, 알아챌 수 있는 고장은 잃지 않습니다.
+   * 완료 처리가 '기록에 먼저 쓰고 목록에서 뺀다'고 정해 둔 것과 같은 원칙입니다.
+   */
   async #write(tasks: Task[]): Promise<void> {
-    this.#cache = tasks;
     await writeJson(KEY, tasks);
+    this.#cache = tasks;
     this.#listeners.forEach((fn) => fn());
   }
 

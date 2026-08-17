@@ -115,6 +115,27 @@ fn spawn_position_saver(app: &AppHandle, moved: Arc<AtomicBool>) {
             continue;
         }
 
+        save_position(&handle);
+    });
+}
+
+/// 창 위치를 적어 둡니다. **반드시 메인 스레드에서.**
+///
+/// 플러그인은 상태 캐시를 잠근 채로 창에게 위치를 묻습니다. 그런데 그 물음은
+/// 메인 스레드의 이벤트 루프를 거쳐야 답이 옵니다. 다른 스레드에서 부르면
+/// '캐시를 쥔 채 메인 스레드를 기다리는' 모양이 되는데, 하필 그때 메인
+/// 스레드가 창 이동 이벤트를 처리하며 같은 캐시를 잠그려 하면 둘이 서로를
+/// 영원히 기다립니다. 창을 옮기는 순간 걸리는 덫입니다.
+///
+/// 그리고 메인 스레드가 멈추면 프런트에서 부른 명령이 하나도 돌아오지 않습니다.
+/// 화면은 웹뷰가 따로 그리니 멀쩡해 보이는데, 적은 할 일이 디스크에 닿지
+/// 못합니다 — 보이는데 저장되지 않는, 가장 나쁜 종류의 고장입니다.
+///
+/// 메인 스레드에서 부르면 잠금과 물음이 같은 스레드에서 차례로 일어나 기다릴
+/// 일이 없습니다. 바탕화면에 창을 붙여 두는 쪽도 같은 이유로 이렇게 합니다.
+fn save_position(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
         if let Err(err) = handle.save_window_state(StateFlags::POSITION) {
             log::warn!("창 위치를 저장하지 못했습니다: {err}");
         }
@@ -224,11 +245,20 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
     // 재시작 직전에 자리를 직접 적어 둡니다. restart()는 정상 종료 경로를 타지
     // 않아서, 플러그인이 저장할 기회를 얻지 못한 채 프로세스가 갈아치워집니다.
     // 업데이트 한 번에 위젯이 낯선 자리에 가 있는 이유가 이것입니다.
-    if let Err(err) = app.save_window_state(StateFlags::POSITION) {
-        log::warn!("재시작 전 창 위치를 저장하지 못했습니다: {err}");
-    }
+    //
+    // 저장과 재시작을 한 덩어리로 메인 스레드에 맡깁니다. 이 명령은 비동기라
+    // 메인 스레드가 아닌 곳에서 도는데, 거기서 저장을 부르면 멈춥니다
+    // (save_position의 설명 참고). 그리고 순서가 지켜져야 합니다 — 저장을
+    // 맡겨만 두고 여기서 재시작하면 적히기 전에 프로세스가 사라집니다.
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(err) = handle.save_window_state(StateFlags::POSITION) {
+            log::warn!("재시작 전 창 위치를 저장하지 못했습니다: {err}");
+        }
+        handle.restart();
+    });
 
-    app.restart();
+    Ok(())
 }
 
 #[tauri::command]
