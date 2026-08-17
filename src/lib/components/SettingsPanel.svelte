@@ -564,7 +564,20 @@
 </section>
 
 <style>
+  /**
+   * 폭은 위젯이 정합니다. 설정은 거기 맞춰 늘어날 뿐입니다.
+   *
+   * 패널이 inline-flex라 가장 넓은 자식을 따라갑니다. 그런데 안내문 한 줄의
+   * max-content가 561px이라, 그냥 두면 설정 카드가 위젯보다 24px 넓어져 두
+   * 카드의 세로선이 어긋납니다.
+   *
+   * width:0으로 폭 계산에서 빠지고 min-width:100%로 정해진 폭에 맞춥니다.
+   * 배율 150%에서만 우연히 맞아 보였는데, 그건 창이 좁아 눌린 것이지 맞은
+   * 것이 아니었습니다.
+   */
   .editor {
+    width: 0;
+    min-width: 100%;
     border-radius: 14px;
     padding: 12px 14px 14px;
     background: var(--surface);
