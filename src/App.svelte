@@ -3,14 +3,19 @@
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
   import {
+    addCalendar,
     addCategory,
     addTask,
+    calendars,
     completeTask,
     init,
     moveCategory,
     nudgeZoom,
+    removeCalendar,
     removeCategory,
     renameCategory,
+    startCalendarPolling,
+    syncCalendars,
     markSeeded,
     setPerPage,
     setZoom,
@@ -283,6 +288,9 @@
     return startClock();
   });
 
+  // 구독한 캘린더를 주기적으로 받아 옵니다
+  $effect(() => startCalendarPolling());
+
   // Ctrl+휠로 배율을 바꿉니다. 브라우저에서 몸에 밴 동작이라 설명이 필요 없습니다.
   $effect(() => {
     const on = (e: WheelEvent) => {
@@ -480,6 +488,10 @@
         onZoom={nudgeZoom}
         {settings}
         onSettings={patchSettings}
+        calendars={calendars.list}
+        onAddCalendar={addCalendar}
+        onRemoveCalendar={(id) => void removeCalendar(id)}
+        onSyncCalendars={() => void syncCalendars()}
         maxHeight={settingsBudget}
         zoomFactor={view.zoom}
       />

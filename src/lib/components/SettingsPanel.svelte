@@ -8,6 +8,7 @@
     setAutostart,
   } from '../system';
   import type { Settings } from '../settings';
+  import { maskUrl, type Subscription } from '../subscriptions';
   import type { Category, Task } from '../types';
 
   let {
@@ -25,6 +26,10 @@
     onZoom,
     settings,
     onSettings,
+    calendars,
+    onAddCalendar,
+    onRemoveCalendar,
+    onSyncCalendars,
     maxHeight,
     zoomFactor = 1,
   }: {
@@ -45,6 +50,10 @@
     onZoom: (delta: number) => void;
     settings: Settings;
     onSettings: (patch: Partial<Settings>) => void;
+    calendars: Subscription[];
+    onAddCalendar: (url: string, categoryId: string) => Promise<void>;
+    onRemoveCalendar: (id: string) => void;
+    onSyncCalendars: () => void;
     /** 이 영역이 쓸 수 있는 최대 높이. 넘치는 만큼은 끌어서 봅니다 */
     maxHeight: number;
     /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
@@ -83,6 +92,37 @@
     observer.observe(el);
     return () => observer.disconnect();
   });
+
+  /* ---------- 캘린더 ---------- */
+
+  let calUrl = $state('');
+  let calTopic = $state('');
+  let calBusy = $state(false);
+
+  const nameOf = (id: string) => categories.find((c) => c.id === id)?.name ?? '(없는 주제)';
+
+  /** '3분 전' 정도면 충분합니다. 정확한 시각을 알고 싶은 값이 아닙니다 */
+  function ago(at: number | null): string {
+    if (!at) return '아직';
+    const m = Math.floor((Date.now() - at) / 60000);
+    if (m < 1) return '방금';
+    if (m < 60) return `${m}분 전`;
+    const h = Math.floor(m / 60);
+    return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+  }
+
+  async function submitCalendar() {
+    const url = calUrl.trim();
+    const topic = calTopic || categories[0]?.id;
+    if (!url || !topic || calBusy) return;
+    calBusy = true;
+    try {
+      await onAddCalendar(url, topic);
+      calUrl = '';
+    } finally {
+      calBusy = false;
+    }
+  }
 
   /* ---------- 시작 · 업데이트 ---------- */
 
@@ -347,6 +387,55 @@
         {/each}
       {/if}
 
+      <h2 class="section">캘린더</h2>
+
+      <!--
+        캘린더 하나가 주제 하나입니다. 주제를 나누는 기준을 사용자가 이미
+        캘린더 쪽에서 정해 두었으니, 그걸 그대로 씁니다.
+      -->
+      {#each calendars as cal (cal.id)}
+        <div class="row sub">
+          <span class="label" title={cal.error ?? ''}>
+            {nameOf(cal.categoryId)} · {maskUrl(cal.url)}
+          </span>
+          <span class="status" class:stale={!!cal.error}>
+            {cal.error ? '실패' : ago(cal.syncedAt)}
+          </span>
+          <button class="danger" aria-label="구독 해지" onclick={() => onRemoveCalendar(cal.id)}>
+            해지
+          </button>
+        </div>
+      {/each}
+
+      <div class="row">
+        <input
+          class="rename"
+          placeholder="캘린더 주소 (비공개 ICS)"
+          bind:value={calUrl}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') void submitCalendar();
+          }}
+        />
+      </div>
+
+      <div class="row">
+        <select class="rename pick" bind:value={calTopic}>
+          {#each categories as c (c.id)}
+            <option value={c.id}>{c.name}</option>
+          {/each}
+        </select>
+        <button class="add" disabled={!calUrl.trim() || calBusy} onclick={() => void submitCalendar()}>
+          {calBusy ? '받는 중…' : '＋ 구독'}
+        </button>
+      </div>
+
+      {#if calendars.length > 0}
+        <div class="row">
+          <span class="label">주소는 20분마다 다시 읽습니다</span>
+          <button class="danger action" onclick={onSyncCalendars}>지금</button>
+        </div>
+      {/if}
+
       <h2 class="section">시작 · 업데이트</h2>
 
       <div class="row">
@@ -533,6 +622,14 @@
     color: var(--text);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .status.stale {
+    color: var(--deadline);
+  }
+
+  .pick {
+    flex: 1;
   }
 
   .status.ready {

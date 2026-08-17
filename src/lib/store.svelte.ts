@@ -4,7 +4,14 @@ import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './ov
 import { migrateFromLocalStorage, readJson, writeJson } from './persist';
 import { maxTopicsPerPage } from './layout';
 import { theme } from './theme';
+import { IcsSource } from './sources/IcsSource';
 import { LocalSource } from './sources/LocalSource';
+import {
+  loadSubscriptions,
+  saveSubscriptions,
+  newSubscriptionId,
+  type Subscription,
+} from './subscriptions';
 import type { Category, NewTask, Task, TaskSource } from './types';
 
 const CAT_KEY = 'reminder-widget:categories:v1';
@@ -34,6 +41,69 @@ export function registerSource(next: TaskSource): void {
 }
 
 const sourceOf = (task: Task): TaskSource => sources.get(task.sourceId ?? source.id) ?? source;
+
+/**
+ * 구독한 캘린더들.
+ *
+ * 화면에 보여줄 상태(마지막 동기화 시각, 실패 사유)라서 반응형으로 둡니다.
+ */
+export const calendars = $state({ list: [] as Subscription[] });
+
+const icsSources = new Map<string, IcsSource>();
+
+/** 20분마다 받아 옵니다. 마감이 시간~일 단위인 도구라 이 지연은 문제가 아닙니다 */
+const POLL_MS = 20 * 60 * 1000;
+
+function attach(sub: Subscription): IcsSource {
+  const existing = icsSources.get(sub.id);
+  if (existing) return existing;
+  const src = new IcsSource(sub);
+  icsSources.set(sub.id, src);
+  registerSource(src);
+  return src;
+}
+
+/** 받아 온 뒤 상태를 화면과 파일에 반영합니다 */
+async function syncOne(sub: Subscription): Promise<void> {
+  const after = await attach(sub).sync();
+  calendars.list = calendars.list.map((c) => (c.id === after.id ? after : c));
+  await saveSubscriptions(calendars.list);
+  await refresh();
+}
+
+export async function syncCalendars(): Promise<void> {
+  for (const sub of calendars.list) await syncOne(sub);
+}
+
+export async function addCalendar(url: string, categoryId: string): Promise<void> {
+  const sub: Subscription = {
+    id: newSubscriptionId(),
+    url: url.trim(),
+    categoryId,
+    syncedAt: null,
+  };
+  calendars.list = [...calendars.list, sub];
+  await saveSubscriptions(calendars.list);
+  await syncOne(sub);
+}
+
+export async function removeCalendar(id: string): Promise<void> {
+  const src = icsSources.get(id);
+  if (src) {
+    sources.delete(src.id);
+    icsSources.delete(id);
+  }
+  calendars.list = calendars.list.filter((c) => c.id !== id);
+  await saveSubscriptions(calendars.list);
+  await refresh();
+}
+
+/** 주기적으로 받아 옵니다. 해제 함수를 반환 */
+export function startCalendarPolling(): () => void {
+  void syncCalendars();
+  const timer = setInterval(() => void syncCalendars(), POLL_MS);
+  return () => clearInterval(timer);
+}
 
 export const store = $state({
   tasks: [] as Task[],
@@ -85,6 +155,9 @@ export async function init(): Promise<void> {
   const savedZoom = await readJson<number>(ZOOM_KEY);
   if (savedZoom && ZOOM_STEPS.includes(savedZoom)) view.zoom = savedZoom;
   else setZoom(pickZoomForScreen());
+
+  calendars.list = await loadSubscriptions();
+  for (const sub of calendars.list) attach(sub);
 
   const savedPerPage = await readJson<number>(PER_PAGE_KEY);
   if (savedPerPage) view.perPage = Math.max(1, Math.min(maxTopicsPerPage(), savedPerPage));
