@@ -127,6 +127,41 @@ check(
   50
 );
 
+// ---- 지남은 마감선에 매달리는가 ----
+//
+// 깊이가 '얼마나 오래 밀렸나'를 뜻하려면 기준이 마감선이어야 한다. 바닥을
+// 기준으로 쌓으면 구역 높이(가장 붐비는 레인이 정한다)에 따라 같은 항목의
+// 깊이가 달라져, 방금 놓친 것이 몇 주 밀린 것처럼 보인다.
+
+seq = 0;
+const lopsided = computeAxis(
+  // a는 한 건만 밀렸고 b는 열 건이 밀렸습니다. 구역 높이는 b가 정합니다.
+  [task('a', -0.5), ...Array.from({ length: 10 }, (_, i) => task('b', -(i + 1) * 3))],
+  categories,
+  NOW,
+  { budget: 900 }
+);
+const soloTop = (lopsided.lanes[0].placed[0]?.y ?? 0) + L.cardHeight;
+check(
+  '밀린 게 하나뿐인 레인도 그 카드가 마감선에 붙는다',
+  soloTop,
+  Math.max(lopsided.overdueHeight, lopsided.lanes[1].content.overdue)
+);
+
+const crowdedLane = lopsided.lanes[1].placed.filter((p) => p.zone === 'overdue');
+const newest = crowdedLane.reduce((a, b) => (a.task.due > b.task.due ? a : b));
+check('붐비는 레인도 가장 최근에 놓친 것이 마감선에 붙는다', newest.y + L.cardHeight, soloTop);
+
+// ---- 빈 대기 구역이 자리를 붙들지 않는가 ----
+
+const noQueue = computeAxis(fill('a', 10, 0, 0), categories, NOW, { budget: 420 });
+check('대기가 비면 접힌다', noQueue.queueHeight, L.queueCollapsed);
+check(
+  '그만큼 지남이 더 받는다',
+  noQueue.overdueHeight > 420 - L.queueCollapsed - L.runwayCollapsed - 1,
+  true
+);
+
 // ---- content 좌표에서는 절대 겹치지 않는가 ----
 
 const worstOverlap = (zone: string) => {
@@ -159,7 +194,7 @@ check('같은 시각에 12개가 몰려도 겹치지 않는다', +pileWorst.toFi
 
 const empty = computeAxis([], categories, NOW, { budget: BUDGET });
 check('빈 판은 활주로를 접는다', empty.runwayHeight, L.runwayCollapsed);
-check('빈 판 높이', empty.height, L.runwayCollapsed + L.minQueueHeight);
+check('빈 판 높이', empty.height, L.runwayCollapsed + L.queueCollapsed);
 check('빈 판은 끌 것이 없다', empty.runwayContent <= empty.runwayHeight, true);
 
 const light = computeAxis(fill('a', 0, 1, 2), categories, NOW, { budget: BUDGET });

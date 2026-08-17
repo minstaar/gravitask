@@ -30,6 +30,15 @@ export interface Theme {
      */
     cardGap: number;
     minQueueHeight: number;
+    /**
+     * 대기 구역에 아무것도 없을 때의 높이.
+     *
+     * 활주로에 runwayCollapsed가 있는 것과 같은 이유입니다 — 빈 구역이 제
+     * 최소 높이를 그대로 붙들고 있으면, 밀린 일이 많아 자리가 급한 순간에도
+     * 카드 한 장 없는 곳이 80px을 쥐고 있게 됩니다. 그렇다고 0으로 접으면
+     * 경계선과 마감선이 붙어 축이 사라지므로, 띠 하나만 남깁니다.
+     */
+    queueCollapsed: number;
     floor: number;
     /**
      * 경계선과 대기 구역 첫 카드 사이 간격.

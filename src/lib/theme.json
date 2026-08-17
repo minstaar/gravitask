@@ -10,6 +10,7 @@
     "cardHeight": 46,
     "cardGap": 6,
     "minQueueHeight": 80,
+    "queueCollapsed": 36,
     "floor": 6,
     "queueTop": 0,
     "maxHeightFraction": 0.55,

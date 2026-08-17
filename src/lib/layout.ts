@@ -250,12 +250,17 @@ export function computeAxis(
    */
   const budget = Math.max(L.minColumnHeight, opts.budget ?? Number.POSITIVE_INFINITY);
 
+  // 빈 대기 구역은 자리를 붙들지 않습니다. 카드가 한 장이라도 있어야 최소
+  // 높이를 주장할 자격이 생깁니다.
+  const anyQueue = splits.some((s) => s.queue.length > 0);
+  const queueNeed = anyQueue ? Math.max(L.minQueueHeight, queueContent) : L.queueCollapsed;
+
   const [overdueHeight, runwayHeight, queueHeight] = allocate(
-    [overdueContent, runwayContent, Math.max(L.minQueueHeight, queueContent)],
+    [overdueContent, runwayContent, queueNeed],
     [
       overdueContent > 0 ? L.cardHeight + L.floor : 0,
       anyRunway ? Math.min(runwayContent, L.runwayHeight) : L.runwayCollapsed,
-      L.minQueueHeight,
+      anyQueue ? L.minQueueHeight : L.queueCollapsed,
     ],
     budget
   );
@@ -272,14 +277,30 @@ export function computeAxis(
     const s = splits[ci];
     const placed: Placed[] = [];
 
-    // 지남 — 마감선 아래로. 오래 밀린 것일수록 더 깊이 가라앉습니다.
-    // s.overdue는 마감이 이른 순이므로 i가 0일수록 가장 오래 밀린 항목입니다.
+    /**
+     * 지남 — 마감선에 매달아 아래로 쌓습니다.
+     *
+     * 깊이가 '얼마나 오래 밀렸나'를 뜻하려면 기준이 마감선이어야 합니다.
+     * 구역 바닥을 기준으로 쌓으면, 구역 높이는 가장 붐비는 레인이 정하므로
+     * 같은 항목의 깊이가 옆 레인 사정에 따라 달라집니다 — 52분 전에 놓친 것이
+     * 다른 레인에 밀린 일이 많다는 이유로 화면 맨 밑에 가라앉아, 몇 주 밀린
+     * 것처럼 읽힙니다.
+     *
+     * 매다는 지점은 보이는 높이와 카드가 차지하는 높이 중 큰 쪽입니다. 넘칠
+     * 때는 카드 더미의 꼭대기가 곧 마감선이고, 모자랄 때는 구역 천장이
+     * 마감선입니다. 어느 쪽이든 가장 최근에 놓친 것이 마감선에 붙습니다.
+     */
+    const overdueStack = stack(s.overdue.length, L.floor);
+    const anchor = Math.max(overdueHeight, overdueStack);
+
+    // s.overdue는 마감이 이른 순이라, 뒤로 갈수록 최근에 놓친 항목입니다.
     s.overdue.forEach((x, i) => {
+      const fromDeadline = s.overdue.length - 1 - i;
       placed.push({
         task: x.task,
         visual: x.visual,
         zone: x.zone,
-        y: L.floor / 2 + i * spacing,
+        y: anchor - fromDeadline * spacing - L.cardHeight,
         remaining: formatRemaining(x.task.due, now, x.zone),
       });
     });
@@ -317,7 +338,7 @@ export function computeAxis(
       category,
       placed,
       content: {
-        overdue: stack(s.overdue.length, L.floor),
+        overdue: overdueStack,
         queue: s.queue.length > 0 ? stack(s.queue.length, L.floor) + L.queueTop : 0,
       },
       upcoming: s.runway.length + s.queue.length,
