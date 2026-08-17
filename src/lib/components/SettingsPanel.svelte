@@ -388,12 +388,12 @@
         어디서 주소를 가져오는지 적어 둡니다. 이 화면만 보고는 무엇을 붙여넣어야
         할지 알 방법이 없고, 구글과 애플은 부르는 이름조차 다릅니다.
       -->
-      <p class="guide">
-        <strong>구글</strong> 캘린더 설정 → 내 캘린더의 설정 → 캘린더 통합 →
-        <em>iCal 형식의 비공개 주소</em> 복사<br />
-        <strong>애플</strong> 캘린더 앱 → 캘린더 목록 → 캘린더 옆 ⓘ →
-        <em>공개 캘린더</em> 켜기 → 링크 공유
-      </p>
+      <div class="guide">
+        <p><strong>구글</strong></p>
+        <p>캘린더 설정 → 내 캘린더의 설정 → 캘린더 통합 → <em>iCal 형식의 비공개 주소</em> 복사</p>
+        <p class="next"><strong>애플</strong></p>
+        <p>캘린더 앱 → 캘린더 목록 → 캘린더 옆 ⓘ → <em>공개 캘린더</em> 켜기 → 링크 공유</p>
+      </div>
 
       {#each calendars as cal (cal.id)}
         <div class="row sub">
@@ -425,43 +425,50 @@
         고르기 전에는 등록을 막습니다. 버튼이 '주제 선택'이라고 해놓고 몰래
         첫 주제에 넣으면, 나중에 엉뚱한 레인에서 일정을 찾게 됩니다.
       -->
-      <div class="row">
-        <button class="nudge topic" onclick={() => (topicOpen = !topicOpen)}>
-          <span>{calTopic ? nameOf(calTopic) : '주제 선택'}</span>
-          <span class="caret" class:up={topicOpen}>▾</span>
-        </button>
-      </div>
+      <!--
+        주제 고르기와 등록을 한 줄에 둡니다. 등록은 글자만큼만 차지하고 나머지를
+        주제가 채웁니다 — 고르는 일이 넓고 마무리가 좁은 것이 순서와 맞습니다.
+        목록은 주제 버튼 아래에 그 폭 그대로 붙어야 무엇의 목록인지 보입니다.
+      -->
+      <div class="row top">
+        <div class="picker">
+          <button class="nudge topic" onclick={() => (topicOpen = !topicOpen)}>
+            <span>{calTopic ? nameOf(calTopic) : '주제 선택'}</span>
+            <span class="caret" class:up={topicOpen}>▾</span>
+          </button>
 
-      {#if topicOpen}
-        <div class="options">
-          {#each categories as c (c.id)}
-            <button class="option" class:on={c.id === calTopic} onclick={() => pickTopic(c.id)}>
-              {c.name}
-            </button>
-          {/each}
+          {#if topicOpen}
+            <div class="options">
+              {#each categories as c (c.id)}
+                <button class="option" class:on={c.id === calTopic} onclick={() => pickTopic(c.id)}>
+                  {c.name}
+                </button>
+              {/each}
 
-          {#if addingTopic}
-            <div class="row">
-              <!-- svelte-ignore a11y_autofocus -->
-              <input
-                class="rename"
-                placeholder="새 주제 이름"
-                autofocus
-                bind:value={newTopic}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') confirmNewTopic();
-                  if (e.key === 'Escape') addingTopic = false;
-                }}
-              />
-              <button class="nudge" disabled={!newTopic.trim()} onclick={confirmNewTopic}>확인</button>
+              {#if addingTopic}
+                <div class="row">
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="rename"
+                    placeholder="새 주제 이름"
+                    autofocus
+                    bind:value={newTopic}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') confirmNewTopic();
+                      if (e.key === 'Escape') addingTopic = false;
+                    }}
+                  />
+                  <button class="nudge" disabled={!newTopic.trim()} onclick={confirmNewTopic}>
+                    확인
+                  </button>
+                </div>
+              {:else}
+                <button class="option new" onclick={() => (addingTopic = true)}>＋ 주제 추가</button>
+              {/if}
             </div>
-          {:else}
-            <button class="option new" onclick={() => (addingTopic = true)}>＋ 주제 추가</button>
           {/if}
         </div>
-      {/if}
 
-      <div class="row">
         <button
           class="add register"
           disabled={!calUrl.trim() || !calTopic || calBusy}
@@ -724,12 +731,27 @@
     color: var(--deadline);
   }
 
-  /* 안내문. 읽으라고 있는 글이라 본문 색을 쓰되 크기로 낮춥니다 */
+  /**
+   * 안내문. 서비스 이름과 경로를 줄로 나눕니다.
+   *
+   * 한 줄에 붙여 쓰면 '구글'이 경로의 첫 단어처럼 읽혀서, 어디까지가 이름이고
+   * 어디부터가 따라 할 순서인지 눈으로 갈리지 않습니다.
+   */
   .guide {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .guide p {
     margin: 0;
     font-size: var(--fs-meta);
-    line-height: 1.55;
+    line-height: 1.5;
     color: var(--text-muted);
+  }
+
+  .guide p.next {
+    margin-top: 8px;
   }
 
   .guide strong {
@@ -751,19 +773,32 @@
    * 등록하는 일이 동시에 할 수 있는 것처럼 읽힙니다. 실제로는 주소를 넣고
    * 주제를 고른 뒤에야 등록입니다. 한 줄씩 내려가야 그 순서가 보입니다.
    */
+  /* 목록이 딸려 있으므로 세로로 쌓입니다. 등록은 위쪽에 붙어 있어야 합니다 */
+  .row.top {
+    align-items: flex-start;
+  }
+
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
   .row .topic {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex: 1;
+    width: 100%;
     min-width: 0;
     padding: 6px 10px;
     font-weight: 600;
   }
 
-  /* 마지막 단계라 한 줄을 다 씁니다 */
+  /* 등록은 글자만큼만. 고르는 일이 넓고 마무리가 좁은 것이 순서와 맞습니다 */
   .row .register {
-    flex: 1;
+    flex: none;
   }
 
   .caret {
@@ -782,7 +817,6 @@
     flex-direction: column;
     gap: 4px;
     padding: 6px;
-    margin-left: 12px;
     border-radius: 9px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
