@@ -71,8 +71,19 @@ async function syncOne(sub: Subscription): Promise<void> {
   await refresh();
 }
 
+/** 겹쳐 돌면 같은 캘린더를 두 번 받아 오고 결과가 서로를 덮습니다 */
+let syncing = false;
+
 export async function syncCalendars(): Promise<void> {
-  for (const sub of calendars.list) await syncOne(sub);
+  if (syncing) return;
+  syncing = true;
+  try {
+    // 목록을 먼저 복사해 둡니다. 도는 동안 syncOne이 calendars.list를 갈아
+    // 끼우므로, 원본을 그대로 순회하면 중간에 발밑이 바뀝니다.
+    for (const sub of [...calendars.list]) await syncOne(sub);
+  } finally {
+    syncing = false;
+  }
 }
 
 export async function addCalendar(url: string, categoryId: string): Promise<void> {
@@ -98,11 +109,25 @@ export async function removeCalendar(id: string): Promise<void> {
   await refresh();
 }
 
-/** 주기적으로 받아 옵니다. 해제 함수를 반환 */
+/**
+ * 주기적으로 받아 옵니다. 해제 함수를 반환.
+ *
+ * 첫 동기화를 다음 틱으로 미루는 것이 중요합니다. 이 함수는 $effect 안에서
+ * 불리는데, 여기서 calendars.list를 곧바로 읽으면 그 읽기가 effect의 의존성이
+ * 됩니다. 그런데 동기화 결과는 다시 calendars.list에 쓰이므로 — 읽고, 쓰고,
+ * 다시 도는 고리가 생깁니다. 캘린더가 없을 때는 쓸 일이 없어 멀쩡하다가
+ * 하나를 붙이는 순간 화면이 멈춥니다. 게다가 매 바퀴 setInterval이 하나씩
+ * 쌓입니다.
+ *
+ * 타이머 콜백은 effect 본문 밖이라 거기서 읽는 것은 추적되지 않습니다.
+ */
 export function startCalendarPolling(): () => void {
-  void syncCalendars();
+  const kick = setTimeout(() => void syncCalendars(), 0);
   const timer = setInterval(() => void syncCalendars(), POLL_MS);
-  return () => clearInterval(timer);
+  return () => {
+    clearTimeout(kick);
+    clearInterval(timer);
+  };
 }
 
 export const store = $state({
