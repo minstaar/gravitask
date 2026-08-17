@@ -1,3 +1,4 @@
+import { CALENDAR_CACHE_FILE, readJson, writeJson } from '../persist';
 import { AHEAD_DAYS, BACK_DAYS, type Subscription } from '../subscriptions';
 import type { Task, TaskSource } from '../types';
 
@@ -57,6 +58,23 @@ export class IcsSource implements TaskSource {
     return [...this.#cache];
   }
 
+  /**
+   * 지난 실행에서 받아 둔 것을 되살립니다. 앱을 켤 때 한 번.
+   *
+   * 이게 없으면 켤 때마다 캘린더 일정이 통째로 빠졌다가 첫 받아오기가
+   * 성공해야 돌아옵니다. 부팅 직후처럼 아직 인터넷이 안 붙어 있으면 그
+   * 세션 내내 빠져 있습니다. sync()가 "실패해도 캐시를 비우지 않는다"고
+   * 해 둔 약속이 앱을 껐다 켜는 순간 깨지고 있었습니다.
+   *
+   * 오래된 것일 수 있지만, 마지막으로 받아온 시각은 설정에 적혀 있고 곧
+   * 갱신됩니다. 낡은 것을 보여주는 쪽이 아무것도 없는 쪽보다 낫습니다.
+   */
+  async restore(): Promise<void> {
+    if (this.#cache.length > 0) return;
+    const saved = await readJson<Task[]>(this.#sub.id, CALENDAR_CACHE_FILE);
+    if (saved?.length) this.#cache = saved;
+  }
+
   subscribe(onChange: () => void): () => void {
     this.#listeners.add(onChange);
     return () => this.#listeners.delete(onChange);
@@ -88,6 +106,16 @@ export class IcsSource implements TaskSource {
       this.#sub = { ...this.#sub, syncedAt: now, error: undefined };
     } catch (err) {
       this.#sub = { ...this.#sub, error: String(err) };
+    }
+
+    // 받아온 것을 디스크에도 남깁니다. 여기서 실패하는 것은 이번 화면과
+    // 무관하므로 동기화 실패로 적지 않습니다 — 다음 폴링에서 다시 씁니다.
+    if (!this.#sub.error) {
+      try {
+        await writeJson(this.#sub.id, this.#cache, CALENDAR_CACHE_FILE);
+      } catch {
+        /* 다음 번에 다시 씁니다 */
+      }
     }
 
     this.#listeners.forEach((fn) => fn());

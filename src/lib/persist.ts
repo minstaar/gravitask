@@ -22,11 +22,27 @@ export const MAIN_FILE = 'gravitask.json';
  */
 export const ARCHIVE_FILE = 'gravitask-archive.json';
 
+/**
+ * 구독한 캘린더에서 마지막으로 받아 온 일정.
+ *
+ * 남의 서버에서 온 것을 다시 받아올 수 있으니 없어도 되는 데이터입니다.
+ * 그래도 남기는 이유는 앱을 켜는 순간에 있습니다 — 받아오기 전까지 캘린더
+ * 일정이 화면에서 통째로 빠지고, 부팅 직후처럼 아직 인터넷이 안 붙었으면
+ * 그 세션 내내 빠져 있습니다.
+ *
+ * 파일을 따로 두는 것은 쓰기 비용 때문입니다. 20분마다 갱신되는 것을 살아
+ * 있는 할 일과 한 파일에 두면, 그때마다 손으로 적은 할 일까지 함께 다시
+ * 씁니다. 그리고 이 파일은 언제든 지워도 되는 데이터라, 깨져도 잃을 것이
+ * 없다는 점이 같은 파일에 있어서는 안 되는 이유이기도 합니다.
+ */
+export const CALENDAR_CACHE_FILE = 'gravitask-calendar-cache.json';
+
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 type TauriStore = {
   get<T>(key: string): Promise<T | null | undefined>;
   set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<boolean>;
   save(): Promise<void>;
 };
 
@@ -72,6 +88,27 @@ export async function writeJson(key: string, value: unknown, file = MAIN_FILE): 
   // autoSave를 끄고 매번 명시적으로 씁니다. 할 일 하나를 체크하고 바로
   // 컴퓨터를 끄더라도 그 변경이 디스크에 남아 있어야 합니다.
   await store.save();
+}
+
+/**
+ * 지웁니다.
+ *
+ * 값을 비우는 것과 키를 없애는 것은 다릅니다. 연결을 끊은 캘린더의 일정
+ * 제목이 파일에 그대로 남아 있는 것은, 끊었다는 사용자의 뜻과 어긋납니다.
+ */
+export async function removeJson(key: string, file = MAIN_FILE): Promise<void> {
+  if (!inTauri) {
+    localStorage.removeItem(key);
+    return;
+  }
+
+  try {
+    const store = await openStore(file);
+    await store.delete(key);
+    await store.save();
+  } catch {
+    /* 없으면 지운 것과 같습니다 */
+  }
 }
 
 /**

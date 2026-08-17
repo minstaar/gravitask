@@ -1,7 +1,13 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { forgetTask } from './notify';
 import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './overlay';
-import { migrateFromLocalStorage, readJson, writeJson } from './persist';
+import {
+  CALENDAR_CACHE_FILE,
+  migrateFromLocalStorage,
+  readJson,
+  removeJson,
+  writeJson,
+} from './persist';
 import { maxTopicsPerPage } from './layout';
 import { theme } from './theme';
 import { IcsSource } from './sources/IcsSource';
@@ -126,6 +132,9 @@ export async function removeCalendar(id: string): Promise<void> {
   } catch {
     /* 저장소에 없으면 지운 것과 같습니다 */
   }
+  // 받아 뒀던 일정도 지웁니다. 연결을 끊었는데 일정 제목이 파일에 남아
+  // 있는 것은 끊었다는 뜻과 어긋납니다.
+  await removeJson(id, CALENDAR_CACHE_FILE);
   await refresh();
 }
 
@@ -230,7 +239,13 @@ export async function init(): Promise<void> {
   else setZoom(pickZoomForScreen());
 
   calendars.list = await migrateCalendarUrls(await loadSubscriptions());
-  for (const sub of calendars.list) attach(sub);
+
+  // 붙이면서 지난 실행에서 받아 둔 일정을 되살리고, 그것까지 담아 한 번 더
+  // 훑습니다. 위의 refresh는 캘린더 소스가 아직 붙기 전이라 로컬 할 일만
+  // 봤습니다. 이게 없으면 켤 때마다 캘린더가 비어 있다가 첫 받아오기가
+  // 성공해야 채워집니다.
+  await Promise.all(calendars.list.map((sub) => attach(sub).restore()));
+  if (calendars.list.length > 0) await refresh();
 
   const savedPerPage = await readJson<number>(PER_PAGE_KEY);
   if (savedPerPage) view.perPage = Math.max(1, Math.min(maxTopicsPerPage(), savedPerPage));
