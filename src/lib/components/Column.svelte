@@ -112,8 +112,24 @@
   const rangeOf = (laneIndex: number, zone: Zone) =>
     Math.max(0, contentOf(laneIndex, zone) - viewportOf(zone));
 
-  const panOf = (laneId: string, laneIndex: number, zone: Zone) =>
-    Math.min(pan[keyOf(laneId, zone)] ?? 0, rangeOf(laneIndex, zone));
+  /**
+   * 손대지 않았을 때 어디를 보여줄지.
+   *
+   * 활주로와 대기는 아래가 급한 쪽입니다(마감이 이를수록 아래). 그래서 0에서
+   * 시작하면 가장 급한 것이 보입니다.
+   *
+   * 지남은 반대입니다. 오래 밀린 것일수록 깊이 가라앉으므로 아래쪽이 가장 오래된
+   * 것이고, 방금 놓쳐서 아직 손쓸 만한 것은 마감선 바로 아래 — 즉 위쪽에 있습니다.
+   * 0에서 시작하면 지난주에 놓친 것들만 보이고 오늘 놓친 것은 화면 밖으로
+   * 나갑니다. 그래서 지남만 끝까지 올려서 시작합니다.
+   */
+  const restingPan = (zone: Zone, range: number) => (zone === 'overdue' ? range : 0);
+
+  const panOf = (laneId: string, laneIndex: number, zone: Zone) => {
+    const range = rangeOf(laneIndex, zone);
+    const set = pan[keyOf(laneId, zone)];
+    return set === undefined ? restingPan(zone, range) : Math.min(set, range);
+  };
 
   /**
    * 할 일이 줄면 끌 수 있는 범위도 줄어듭니다. 그대로 두면 빈 곳을 보고 있게
@@ -167,7 +183,8 @@
 
     const key = keyOf(laneId, zone);
     const startY = e.clientY;
-    const startPan = pan[key] ?? 0;
+    // 아직 손대지 않았으면 지금 보고 있는 자리에서 이어서 끌어야 합니다
+    const startPan = panOf(laneId, laneIndex, zone);
     let moved = false;
 
     const onMove = (ev: PointerEvent) => {
@@ -201,7 +218,8 @@
     if (limit <= 0) return;
     e.preventDefault();
     const key = keyOf(laneId, zone);
-    pan = { ...pan, [key]: Math.max(0, Math.min(limit, (pan[key] ?? 0) - e.deltaY)) };
+    const from = panOf(laneId, laneIndex, zone);
+    pan = { ...pan, [key]: Math.max(0, Math.min(limit, from - e.deltaY)) };
   }
 
   /* ---------- 눈금 ---------- */
