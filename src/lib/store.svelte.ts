@@ -1,5 +1,6 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { forgetTask } from './notify';
+import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './overlay';
 import { migrateFromLocalStorage, readJson, writeJson } from './persist';
 import { maxTopicsPerPage } from './layout';
 import { theme } from './theme';
@@ -19,6 +20,21 @@ const SEED: Category[] = [
 
 export const source: TaskSource = new LocalSource();
 
+/**
+ * 붙어 있는 소스들.
+ *
+ * 지금은 로컬 하나뿐이지만, 완료를 처리하는 방법이 소스마다 다르므로 항목이
+ * 어디서 왔는지 되짚을 수단이 필요합니다. 소스를 나중에 더해도 이 자리만
+ * 늘어납니다.
+ */
+const sources = new Map<string, TaskSource>([[source.id, source]]);
+
+export function registerSource(next: TaskSource): void {
+  sources.set(next.id, next);
+}
+
+const sourceOf = (task: Task): TaskSource => sources.get(task.sourceId ?? source.id) ?? source;
+
 export const store = $state({
   tasks: [] as Task[],
   categories: SEED,
@@ -29,6 +45,9 @@ export const store = $state({
 export interface UndoEntry {
   id: string;
   title: string;
+  /** 되돌리는 방법이 소스마다 달라서 어디서 왔는지 함께 들고 다닙니다 */
+  sourceId: string;
+  occurrenceKey: string;
 }
 
 const UNDO_DEPTH = 10;
@@ -152,11 +171,25 @@ async function drainCompleted(): Promise<void> {
   await refresh();
 }
 
-/** 저장된 것을 다시 읽어옵니다 */
+/**
+ * 저장된 것을 다시 읽어옵니다.
+ *
+ * 우리가 소유한 소스는 완료한 항목이 이미 목록에서 빠져 있습니다. 남의 소스는
+ * 피드가 매번 전부를 돌려주므로, 완료 표시를 보고 여기서 걸러냅니다.
+ */
 export async function refresh(): Promise<void> {
   const saved = await readJson<Category[]>(CAT_KEY);
   if (saved && saved.length > 0) store.categories = saved;
-  store.tasks = await source.list();
+
+  const overlay = await loadOverlay();
+  const lists = await Promise.all(
+    [...sources.values()].map(async (src) => {
+      const items = await src.list();
+      if (src.writable) return items;
+      return items.filter((t) => !overlay[overlayKey(src.id, occurrenceOf(t))]);
+    })
+  );
+  store.tasks = lists.flat();
 }
 
 /** 예시 항목을 한 번만 넣기 위한 표시 */
@@ -181,18 +214,52 @@ export async function addTask(input: NewTask): Promise<void> {
  * 없는 게 아니라 기록으로 옮겨 갔을 뿐이라서 언제든 되돌릴 수 있습니다.
  */
 export async function completeTask(task: Task): Promise<void> {
-  const categoryName = store.categories.find((c) => c.id === task.categoryId)?.name ?? '';
+  const src = sourceOf(task);
+  const at = Date.now();
 
-  // 기록에 먼저 쓰고 살아 있는 목록에서 뺍니다. 그 사이에 죽으면 양쪽에 남는데,
-  // init이 살아 있는 쪽을 남기므로 최악이 '한 번 더 체크'입니다.
-  // 순서를 뒤집으면 최악이 '사라짐'입니다.
-  await archiveTask({ ...task, completedAt: Date.now(), categoryName });
-  await source.remove?.(task.id);
+  if (src.writable) {
+    // 우리 것 — 기록으로 옮깁니다.
+    //
+    // 기록에 먼저 쓰고 살아 있는 목록에서 뺍니다. 그 사이에 죽으면 양쪽에
+    // 남는데, init이 살아 있는 쪽을 남기므로 최악이 '한 번 더 체크'입니다.
+    // 순서를 뒤집으면 최악이 '사라짐'입니다.
+    const categoryName = store.categories.find((c) => c.id === task.categoryId)?.name ?? '';
+    await archiveTask({ ...task, completedAt: at, categoryName });
+    await src.remove?.(task.id);
+  } else {
+    // 남의 것 — 옮겨도 다음 폴링에 되살아나므로 표시만 남깁니다.
+    await markDone(src.id, occurrenceOf(task), at);
+  }
 
-  undo.stack.push({ id: task.id, title: task.title });
+  undo.stack.push({
+    id: task.id,
+    title: task.title,
+    sourceId: src.id,
+    occurrenceKey: occurrenceOf(task),
+  });
   if (undo.stack.length > UNDO_DEPTH) undo.stack.shift();
 
   await refresh();
+}
+
+/**
+ * 완료를 되돌립니다.
+ *
+ * 완료할 때 갈라졌던 경로를 그대로 되짚습니다 — 우리 것은 기록에서 꺼내
+ * 되돌리고, 남의 것은 표시만 지웁니다. 표시를 지우면 다음 목록에서 다시
+ * 나타납니다.
+ */
+export async function undoEntry(entry: UndoEntry): Promise<boolean> {
+  const src = sources.get(entry.sourceId);
+  if (src && !src.writable) {
+    await clearDone(entry.sourceId, entry.occurrenceKey);
+    await forgetTask(entry.id);
+    const i = undo.stack.findIndex((e) => e.id === entry.id);
+    if (i >= 0) undo.stack.splice(i, 1);
+    await refresh();
+    return true;
+  }
+  return restoreTask(entry.id);
 }
 
 /** 기록에서 꺼내 되살립니다. 기록에 없으면 false */
@@ -222,7 +289,7 @@ export async function undoLast(): Promise<UndoEntry | null> {
     const entry = undo.stack[undo.stack.length - 1];
     // 성공하면 restoreTask가 스택에서 빼 줍니다.
     // 기록에 없는 항목은 되돌릴 것이 없으니 스택에서만 버리고 다음으로 넘어갑니다.
-    if (await restoreTask(entry.id)) return entry;
+    if (await undoEntry(entry)) return entry;
     undo.stack.pop();
   }
   return null;

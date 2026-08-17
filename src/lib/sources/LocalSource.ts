@@ -23,6 +23,7 @@ export class LocalSource implements TaskSource {
   readonly kind = 'local' as const;
   readonly label = '내 할 일';
   readonly writable = true;
+  readonly completable = true;
 
   #listeners = new Set<() => void>();
   #cache: Task[] | null = null;

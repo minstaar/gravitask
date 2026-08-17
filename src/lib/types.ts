@@ -17,6 +17,23 @@ export interface Task {
   createdAt: number;
   /** 완료 시각 (epoch ms). null이면 미완료 */
   completedAt: number | null;
+
+  /**
+   * 어느 소스에서 왔는지. 없으면 우리가 소유한 로컬 항목입니다.
+   *
+   * 완료를 처리하는 방법이 소스마다 다르기 때문에 필요합니다 — 우리 것은
+   * 기록으로 옮기고, 남의 것은 옮길 수 없으니 표시만 남깁니다.
+   */
+  sourceId?: string;
+
+  /**
+   * 반복 일정에서 이 회차를 가리키는 키.
+   *
+   * ICS의 UID는 일정 하나가 아니라 반복 계열 전체에 붙습니다. 매주 월요일
+   * 수업 열두 번이 전부 같은 UID를 씁니다. 그래서 UID만으로 완료를 표시하면
+   * 이번 주 수업을 체크하는 순간 학기 전체가 완료 처리됩니다.
+   */
+  occurrenceKey?: string;
 }
 
 export type NewTask = Omit<Task, 'id' | 'createdAt' | 'completedAt'>;
@@ -61,8 +78,23 @@ export interface TaskSource {
   readonly id: string;
   readonly kind: 'local' | 'ics';
   readonly label: string;
-  /** false면 UI가 체크박스·편집·삭제를 숨깁니다 */
+  /**
+   * 항목 자체를 고치거나 지울 수 있는가 — 제목·마감 수정, 삭제.
+   *
+   * 소유 여부이기도 합니다. 우리가 소유한 소스에서만 완료를 '옮기기'로
+   * 처리할 수 있습니다.
+   */
   readonly writable: boolean;
+
+  /**
+   * 완료 표시를 할 수 있는가.
+   *
+   * writable과 다릅니다. 남의 캘린더는 고칠 수 없지만 "이건 처리했다"는 표시는
+   * 할 수 있어야 합니다 — 오히려 그게 이 위젯에서 가장 자주 하는 일입니다.
+   * 예전에는 둘을 한 값으로 묶어 두어서, 읽기 전용 소스를 붙이는 순간 체크
+   * 자체가 불가능해지는 구조였습니다.
+   */
+  readonly completable: boolean;
 
   list(): Promise<Task[]>;
   /** 소스 내용이 바뀌면 호출됨. 해제 함수를 반환 */
