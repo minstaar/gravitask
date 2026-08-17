@@ -110,12 +110,18 @@
   let updateNote = $state('');
   let progress = $state<number | null>(null);
 
-  const updateText = $derived.by(() => {
+  /**
+   * ' 업데이트'라는 이름은 그대로 두고 상태만 옆에 씁니다.
+   *
+   * 이름 자리를 상태가 갈아치우면 무엇에 대한 줄인지가 순간순간 사라져서,
+   * 눈이 매번 다시 읽어야 합니다. 이름은 고정된 이정표여야 합니다.
+   */
+  const updateStatus = $derived.by(() => {
     if (updateNote) return updateNote;
     if (progress !== null) return `내려받는 중… ${progress}%`;
     if (updateBusy) return '확인 중…';
-    if (newVersion) return `새 버전 v${newVersion}`;
-    return '업데이트';
+    if (newVersion) return `v${newVersion}으로 업데이트`;
+    return '';
   });
 
   $effect(() => {
@@ -144,10 +150,10 @@
       } else {
         const found = await checkUpdate();
         newVersion = found;
-        if (!found) note('최신 버전입니다');
+        if (!found) note('최신입니다');
       }
     } catch (err) {
-      note(String(err).includes('최신') ? '최신 버전입니다' : '실패 — 다시 시도');
+      note(String(err).includes('최신') ? '최신입니다' : '실패 — 다시 시도');
     } finally {
       updateBusy = false;
       progress = null;
@@ -362,7 +368,8 @@
         '최신입니다'도 답이므로 반드시 적습니다.
       -->
       <div class="row">
-        <span class="label">{updateText}</span>
+        <span class="label">업데이트</span>
+        {#if updateStatus}<span class="status" class:ready={newVersion}>{updateStatus}</span>{/if}
         <button class="danger action" disabled={updateBusy} onclick={onUpdateClick}>
           {newVersion ? '설치' : '확인'}
         </button>
@@ -517,6 +524,20 @@
     .knob {
       transition: none;
     }
+  }
+
+  /* 상태는 이름보다 밝게 둡니다. 둘 다 흐리면 지금 무슨 일이 벌어지는지
+     눈에 안 들어옵니다. 퍼센트가 흔들리지 않게 고정폭 숫자를 씁니다. */
+  .status {
+    font-size: var(--fs-meta);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .status.ready {
+    color: #cfcbff;
+    font-weight: 600;
   }
 
   /* 확인/설치 버튼. 삭제 버튼과 같은 모양이되 위험한 동작이 아닙니다 */
