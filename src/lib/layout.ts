@@ -1,6 +1,13 @@
 // 확장자를 붙입니다 — 테스트를 번들러 없이 node로 바로 돌립니다 (urgency.ts와 같은 이유)
 import { theme, type Theme } from './theme.ts';
-import { formatRemaining, hoursUntil, visualFor, type Visual, type Zone } from './urgency.ts';
+import {
+  formatDeadline,
+  formatRemaining,
+  hoursUntil,
+  visualFor,
+  type Visual,
+  type Zone,
+} from './urgency.ts';
 import type { Category, Task } from './types.ts';
 
 /**
@@ -32,6 +39,8 @@ export interface Placed {
   /** 구역 안에서의 위치. 구역 바닥이 0이고 위로 갈수록 커집니다 */
   y: number;
   remaining: string;
+  /** 마감 시각 그 자체. 카드에 손을 올렸을 때만 보입니다 */
+  deadline: string;
   zone: Zone;
 }
 
@@ -302,6 +311,7 @@ export function computeAxis(
         zone: x.zone,
         y: anchor - fromDeadline * spacing - L.cardHeight,
         remaining: formatRemaining(x.task.due, now, x.zone),
+        deadline: formatDeadline(x.task.due, now),
       });
     });
 
@@ -320,6 +330,7 @@ export function computeAxis(
         zone: x.zone,
         y: resolved[i],
         remaining: formatRemaining(x.task.due, now, x.zone),
+        deadline: formatDeadline(x.task.due, now),
       });
     });
 
@@ -331,6 +342,7 @@ export function computeAxis(
         zone: x.zone,
         y: L.queueTop + i * spacing,
         remaining: formatRemaining(x.task.due, now, x.zone),
+        deadline: formatDeadline(x.task.due, now),
       });
     });
 

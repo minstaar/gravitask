@@ -96,23 +96,41 @@ export function visualFor(
 /* ---------- 표기법 ---------- */
 
 /**
- * `2d 12h` 꼴로 줄입니다.
+ * `2d 12h`, `3h 25m` 꼴로 줄입니다.
  *
- * 버림으로 통일합니다. 반올림을 섞으면 30초 틱마다 경계에서 숫자가 오르내리고,
+ * 버림으로 통일합니다. 반올림을 섞으면 틱마다 경계에서 숫자가 오르내리고,
  * 주변시에 걸리는 움직임은 이 위젯이 가장 아껴 써야 하는 자원입니다.
  *
- * 일주일 밖에서는 시간 단위를 버립니다. 12일 뒤 일의 7시간을 행동에 쓰는
- * 사람은 없으므로, 그 자리는 정보가 아니라 잡음입니다.
+ * 눈금은 남은 시간에 따라 갈립니다. 하루 안쪽은 분까지 적습니다 — 오늘 안에
+ * 끝내야 하는 일에서 `6h`와 `6h 55m`은 저녁 계획이 달라지는 차이입니다.
+ * 하루 밖은 시간까지, 일주일 밖은 날까지만 적습니다. 12일 뒤 일의 7시간을
+ * 행동에 쓰는 사람은 없으므로 그 자리는 정보가 아니라 잡음입니다.
+ *
+ * 0인 단위는 적지 않습니다 — `1d 0h`가 아니라 `1d`, `6h 0m`이 아니라 `6h`.
  */
 const DAY_ONLY_FROM = 7;
 
-function compact(hours: number): string {
+/** 하루 밖 — 날과 시간 */
+function compactDays(hours: number): string {
   const total = Math.max(0, Math.floor(hours));
   const d = Math.floor(total / 24);
   const h = total % 24;
-  if (d === 0) return `${h}h`;
   if (d >= DAY_ONLY_FROM || h === 0) return `${d}d`;
   return `${d}d ${h}h`;
+}
+
+/** 하루 안쪽 — 시간과 분 */
+function compactMinutes(hours: number): string {
+  const total = Math.max(0, Math.floor(hours * 60));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function compact(hours: number): string {
+  return hours < 24 ? compactMinutes(hours) : compactDays(hours);
 }
 
 /**
@@ -133,17 +151,40 @@ export function formatRemaining(due: number, now: number, zone: Zone): string {
   if (zone === 'overdue') {
     const past = -h;
     if (past < 1 / 60) return '방금 지남';
-    if (past < 1) return `${Math.floor(past * 60)}분 지남`;
     return `${compact(past)} 지남`;
   }
 
-  // 한 시간 안쪽에서는 '몇 분 남았나'보다 '몇 시까지'가 행동에 가깝습니다.
-  if (h < 1) {
-    const d = new Date(due);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}까지`;
-  }
-
   return compact(h);
+}
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/**
+ * 마감 시각 그 자체. 카드에 손을 올렸을 때만 보입니다.
+ *
+ * 남은 시간과 마감 시각은 같은 것을 다르게 묻습니다 — "얼마나 급한가"와
+ * "언제까지인가"입니다. 앞의 것이 이 위젯의 기본 관심사라 늘 보이는 자리를
+ * 차지하고, 뒤의 것은 계획을 세울 때 필요하니 물어볼 때만 나옵니다. 한 칸에
+ * 번갈아 넣으면 둘 다 흐려집니다.
+ *
+ * 오늘·내일·어제는 날짜 대신 그렇게 적습니다. 하루 안쪽에서 급한 사람에게
+ * `8/18(화)`는 한 번 더 계산해야 하는 정보입니다.
+ */
+export function formatDeadline(due: number, now: number): string {
+  const d = new Date(due);
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const n = new Date(now);
+  const days = Math.round((midnight(d) - midnight(n)) / 86_400_000);
+
+  if (days === 0) return `오늘 ${time}`;
+  if (days === 1) return `내일 ${time}`;
+  if (days === -1) return `어제 ${time}`;
+
+  const md = `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS[d.getDay()]})`;
+  if (d.getFullYear() === n.getFullYear()) return `${md} ${time}`;
+  return `${d.getFullYear()}/${md} ${time}`;
 }
 
 /* ---------- 색 유틸 ---------- */

@@ -11,6 +11,7 @@
     visual,
     targetY,
     remaining,
+    deadline,
     reducedMotion = false,
     onToggle,
   }: {
@@ -18,6 +19,7 @@
     visual: Visual;
     targetY: number;
     remaining: string;
+    deadline: string;
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
   } = $props();
@@ -108,7 +110,7 @@
     <span class="title" style:font-weight={500 + Math.round(visual.urgency * 2) * 100}>
       {task.title}
     </span>
-    <span class="due">{remaining}</span>
+    <span class="due">{remaining}<span class="when">{deadline}</span></span>
   </span>
 </div>
 
@@ -192,6 +194,29 @@
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     margin-top: 1px;
+  }
+
+  /**
+   * 마감 시각은 손을 올렸을 때만 나옵니다.
+   *
+   * 남은 시간과 마감 시각은 같은 것을 다르게 묻습니다 — "얼마나 급한가"와
+   * "언제까지인가"입니다. 앞의 것이 이 위젯의 기본 관심사라 늘 보이는 자리를
+   * 차지하고, 뒤의 것은 계획을 세울 때 필요하니 물어볼 때만 나옵니다.
+   *
+   * 호버하면 카드가 어차피 제자리에서 펼쳐지므로 자리를 따로 낼 필요가
+   * 없습니다. 레인 폭은 그대로고 아무것도 밀리지 않습니다.
+   */
+  .when {
+    display: none;
+  }
+
+  .card:hover .when {
+    display: inline;
+  }
+
+  .card:hover .when::before {
+    content: ' · ';
+    opacity: 0.55;
   }
 
   /**

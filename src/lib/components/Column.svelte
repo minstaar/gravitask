@@ -348,6 +348,7 @@
                     visual={p.visual}
                     targetY={p.y}
                     remaining={p.remaining}
+                    deadline={p.deadline}
                     {reducedMotion}
                     {onToggle}
                   />
