@@ -347,7 +347,7 @@ export async function refresh(): Promise<void> {
     [...sources.values()].map(async (src) => {
       const items = await src.list();
       if (src.writable) return items;
-      return items.filter((t) => !overlay[overlayKey(src.id, occurrenceOf(t))]);
+      return items.filter((t) => !overlay[overlayKey(occurrenceOf(t))]);
     })
   );
   store.tasks = lists.flat();
@@ -389,7 +389,7 @@ export async function completeTask(task: Task): Promise<void> {
     await src.remove?.(task.id);
   } else {
     // 남의 것 — 옮겨도 다음 폴링에 되살아나므로 표시만 남깁니다.
-    await markDone(src.id, occurrenceOf(task), at);
+    await markDone(occurrenceOf(task), at);
   }
 
   undo.stack.push({
@@ -413,7 +413,7 @@ export async function completeTask(task: Task): Promise<void> {
 export async function undoEntry(entry: UndoEntry): Promise<boolean> {
   const src = sources.get(entry.sourceId);
   if (src && !src.writable) {
-    await clearDone(entry.sourceId, entry.occurrenceKey);
+    await clearDone(entry.occurrenceKey);
     await forgetTask(entry.id);
     const i = undo.stack.findIndex((e) => e.id === entry.id);
     if (i >= 0) undo.stack.splice(i, 1);
