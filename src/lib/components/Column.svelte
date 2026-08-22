@@ -85,6 +85,24 @@
   );
 
   /**
+   * 호버로 펼칠 방향과 한도.
+   *
+   * 카드는 늘 오른쪽으로 펼쳐졌습니다. 그런데 맨 오른쪽 레인은 오른쪽에 남은
+   * 자리가 레인 폭뿐이라, 조금이라도 펼쳐지면 그만큼이 창 밖으로 나갑니다.
+   * 창은 패널 크기에 맞춰 잡히므로 삐져나간 부분은 그대로 잘립니다.
+   *
+   * 마감 시각을 붙이면서 눈에 띄었을 뿐, 긴 제목에서는 원래 있던 문제입니다.
+   *
+   * 넓은 쪽으로 펼치고, 그 쪽에 남은 만큼으로 한도를 겁니다. 왼쪽 여백은
+   * 축 표기(12h·DUE)의 자리라 거기까지는 넘어가지 않습니다.
+   */
+  const laneOffset = (i: number) => i * (laneW + L.laneGap);
+  const roomRight = (i: number) => width - L.gutter - laneOffset(i);
+  const roomLeft = (i: number) => laneOffset(i) + laneW;
+  const flipOf = (i: number) => roomRight(i) < roomLeft(i);
+  const roomOf = (i: number) => Math.max(roomRight(i), roomLeft(i));
+
+  /**
    * 구역을 끌어 본 거리.
    *
    * 지남과 대기는 레인마다 따로입니다 — 높이가 순서(몇 번째)를 뜻할 뿐이라
@@ -349,6 +367,8 @@
                     targetY={p.y}
                     remaining={p.remaining}
                     deadline={p.deadline}
+                    flip={flipOf(li)}
+                    room={roomOf(li)}
                     {reducedMotion}
                     {onToggle}
                   />
@@ -511,12 +531,15 @@
    * overflow:hidden 대신 clip-path를 쓰는 이유는 가로는 열어 두어야 하기
    * 때문입니다. 좁은 레인에서 잘린 제목을 호버로 펼쳐 보는 기능이 있는데,
    * overflow:hidden은 세로만 자를 방법이 없어 그 펼침까지 같이 잘라 버립니다.
+   *
+   * 양쪽을 다 엽니다. 오른쪽에 자리가 모자란 레인은 왼쪽으로 펼치는데,
+   * 왼쪽이 막혀 있으면 그 펼침이 레인 경계에서 잘립니다.
    */
   .zone {
     position: absolute;
     left: 0;
     right: 0;
-    clip-path: inset(0 -420px 0 0);
+    clip-path: inset(0 -420px 0 -420px);
   }
 
   .zone.pannable {

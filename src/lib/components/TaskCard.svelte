@@ -12,6 +12,8 @@
     targetY,
     remaining,
     deadline,
+    flip = false,
+    room = 300,
     reducedMotion = false,
     onToggle,
   }: {
@@ -20,6 +22,10 @@
     targetY: number;
     remaining: string;
     deadline: string;
+    /** 오른쪽에 자리가 모자라면 왼쪽으로 펼칩니다 */
+    flip?: boolean;
+    /** 펼칠 수 있는 최대 폭. 패널 밖으로 나가면 창이 잘라 버립니다 */
+    room?: number;
     reducedMotion?: boolean;
     onToggle: (t: Task) => void;
   } = $props();
@@ -84,9 +90,11 @@
      목표 위치를 따로 노출해야 배치 로직을 검증할 수 있습니다. -->
 <div
   class="card"
+  class:flip
   class:breathe={visual.breathe && visual.zone !== 'queue'}
   data-zone={visual.zone}
   data-target={targetY}
+  style:--room="{room}px"
   out:fall={{ duration: reducedMotion ? 0 : theme.motion.completeMs }}
   style:bottom="{y.current}px"
   style:height="{theme.layout.cardHeight}px"
@@ -175,9 +183,16 @@
     right: auto;
     width: max-content;
     min-width: 100%;
-    max-width: 300px;
+    max-width: min(300px, var(--room, 300px));
     z-index: 30;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  /* 오른쪽에 자리가 모자란 레인은 반대로 펼칩니다 — 팝오버가 화면 끝에서
+     방향을 뒤집는 것과 같습니다. 덮는 방식이라 여기서도 밀리는 것은 없습니다. */
+  .card.flip:hover {
+    left: auto;
+    right: 0;
   }
 
   .card:hover .title {
