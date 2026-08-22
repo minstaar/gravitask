@@ -97,7 +97,7 @@
   style:--room="{room}px"
   out:fall={{ duration: reducedMotion ? 0 : theme.motion.completeMs }}
   style:bottom="{y.current}px"
-  style:height="{theme.layout.cardHeight}px"
+  style:--h="{theme.layout.cardHeight}px"
   style:background
   style:border-left="{visual.stripe}px solid {visual.color}"
   style:border-radius="{visual.radius}px"
@@ -137,6 +137,7 @@
     border: 1px solid rgba(255, 255, 255, 0.09);
     overflow: hidden;
     box-sizing: border-box;
+    height: var(--h);
   }
 
   .body {
@@ -186,6 +187,9 @@
     max-width: min(300px, var(--room, 300px));
     z-index: 30;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    /* 아래를 붙잡고 위로만 자랍니다 (bottom으로 배치되므로 저절로 그렇습니다) */
+    height: auto;
+    min-height: var(--h);
   }
 
   /* 오른쪽에 자리가 모자란 레인은 반대로 펼칩니다 — 팝오버가 화면 끝에서
@@ -225,13 +229,20 @@
     display: none;
   }
 
+  /**
+   * 펼치면 세 줄이 됩니다 — 제목 / 남은 시간 / 마감일.
+   *
+   * 한 줄에 이어 붙이면 `5h 58m · 8/24(월) 01:35`가 190px쯤 되는데, 주제를
+   * 하나만 보이게 두면 레인이 158px이고 패널 자체가 194px입니다. 옆으로는
+   * 갈 데가 없어 그대로 창 밖에서 잘렸습니다. 줄을 바꾸면 필요한 폭이 가장
+   * 긴 한 줄만큼으로 줄어듭니다.
+   *
+   * 카드는 아래를 붙잡고 위로 자랍니다. 이 위젯에서 높이는 시각이고 카드의
+   * 아래 모서리가 그 시각이므로, 위로 자라는 동안 그 뜻은 그대로입니다.
+   */
   .card:hover .when {
-    display: inline;
-  }
-
-  .card:hover .when::before {
-    content: ' · ';
-    opacity: 0.55;
+    display: block;
+    margin-top: 1px;
   }
 
   /**
