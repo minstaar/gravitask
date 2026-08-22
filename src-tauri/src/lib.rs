@@ -413,13 +413,19 @@ pub fn run() {
             forget_calendar_url
         ])
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // 배포판에서도 남깁니다.
+            //
+            // 저장이 조용히 실패하는 일을 한 번 겪고 나니, 로그가 없으면
+            // 사용자 PC에서 무슨 일이 있었는지 알아낼 방법이 없다는 것이
+            // 분명해졌습니다. 배포판은 경고 이상만 남겨 파일이 불어나지
+            // 않게 합니다.
+            let level = if cfg!(debug_assertions) {
+                log::LevelFilter::Info
+            } else {
+                log::LevelFilter::Warn
+            };
+            app.handle()
+                .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 
             let state = Arc::new(WidgetState {
                 focused: AtomicBool::new(false),

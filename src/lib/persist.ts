@@ -48,13 +48,35 @@ type TauriStore = {
 
 const opening = new Map<string, Promise<TauriStore>>();
 
+/**
+ * 파일 하나당 저장소 하나. 여는 일은 한 번만 합니다.
+ *
+ * 실패한 약속은 캐시에 남기지 않습니다. 남기면 그 세션 내내 그 파일을 읽지도
+ * 쓰지도 못합니다 — 읽기는 조용히 null이 되고(설정도 할 일도 완료 표시도
+ * 사라진 것처럼 보입니다) 쓰기는 매번 같은 실패로 돌아옵니다. 앱을 껐다 켜기
+ * 전에는 회복할 방법이 없고, 그 사이 적은 것은 전부 잃습니다.
+ */
 function openStore(file: string): Promise<TauriStore> {
   let p = opening.get(file);
   if (!p) {
-    p = import('@tauri-apps/plugin-store').then((m) => m.load(file, { autoSave: false }));
+    p = import('@tauri-apps/plugin-store')
+      .then((m) => m.load(file, { autoSave: false }))
+      .catch((err) => {
+        opening.delete(file);
+        throw err;
+      });
     opening.set(file, p);
   }
   return p;
+}
+
+/** 한 번 쓰기. 실패하면 그대로 던집니다 */
+async function put(key: string, value: unknown, file: string): Promise<void> {
+  const store = await openStore(file);
+  await store.set(key, value);
+  // autoSave를 끄고 매번 명시적으로 씁니다. 할 일 하나를 체크하고 바로
+  // 컴퓨터를 끄더라도 그 변경이 디스크에 남아 있어야 합니다.
+  await store.save();
 }
 
 export async function readJson<T>(key: string, file = MAIN_FILE): Promise<T | null> {
@@ -83,11 +105,16 @@ export async function writeJson(key: string, value: unknown, file = MAIN_FILE): 
     return;
   }
 
-  const store = await openStore(file);
-  await store.set(key, value);
-  // autoSave를 끄고 매번 명시적으로 씁니다. 할 일 하나를 체크하고 바로
-  // 컴퓨터를 끄더라도 그 변경이 디스크에 남아 있어야 합니다.
-  await store.save();
+  try {
+    await put(key, value, file);
+  } catch (err) {
+    // 열어 둔 저장소가 상해 있을 수 있습니다. 버리고 새로 열어 한 번 더
+    // 해 봅니다. 두 번째도 실패하면 그대로 던집니다 — 저장이 안 됐다는
+    // 사실이 조용히 묻히는 것이 이 앱에서 가장 나쁜 결과입니다.
+    console.warn('저장에 실패해 저장소를 다시 열고 재시도합니다:', err);
+    opening.delete(file);
+    await put(key, value, file);
+  }
 }
 
 /**
