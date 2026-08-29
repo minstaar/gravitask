@@ -27,6 +27,7 @@
     wasSeeded,
     ZOOM_STEPS,
   } from './lib/store.svelte';
+  import { MOD_LABEL } from './lib/platform';
   import { MS_HOUR } from './lib/urgency';
   import { maxTopicsPerPage } from './lib/layout';
   import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
@@ -515,7 +516,7 @@
     {#if toast}
       <div class="undo">
         <span class="done-title">완료 · {toast.title}</span>
-        <button onclick={() => void undoComplete()}>되돌리기 <kbd>Ctrl+Z</kbd></button>
+        <button onclick={() => void undoComplete()}>되돌리기 <kbd>{MOD_LABEL}Z</kbd></button>
       </div>
     {/if}
 

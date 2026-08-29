@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tauri가 tauri.conf.json 옆의 이 파일을 기본 Info.plist에 합쳐 줍니다.
+
+  LSUIElement는 skipTaskbar의 macOS 짝입니다. Dock에서 아이콘을 빼고 메뉴
+  막대도 잡지 않습니다. 위젯은 바탕화면에 깔린 물건이지 오가며 전환하는
+  앱이 아니고, 되찾는 수단은 트레이(메뉴 막대 아이콘)입니다.
+
+  런타임에 activation policy를 바꾸는 방법도 있지만, plist로 두면 실행
+  순간부터 적용되어 Dock 아이콘이 떴다 사라지는 깜빡임이 없습니다.
+-->
+<plist version="1.0">
+  <dict>
+    <key>LSUIElement</key>
+    <true/>
+  </dict>
+</plist>

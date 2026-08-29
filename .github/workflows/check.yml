@@ -1,0 +1,62 @@
+name: check
+
+# 태그를 밀기 전에 두 플랫폼 모두에서 컴파일이 되는지 봅니다.
+#
+# 개발은 Windows에서만 이뤄지는데, macOS 코드는 Apple SDK가 없으면 컴파일조차
+# 할 수 없습니다. 이 워크플로가 없으면 macOS 쪽 오타 하나를 확인하는 데
+# 릴리스 태그를 하나씩 태워야 합니다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 명세 (파싱 · 표기 · 배치)
+        run: npm test
+      - name: 타입 검사
+        run: npm run check
+
+  rust:
+    strategy:
+      # 한쪽이 깨져도 다른 쪽 결과는 보고 싶습니다. 어느 플랫폼만의 문제인지
+      # 아는 것이 고치는 시간의 절반입니다.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: ${{ matrix.os }}
+
+      - run: npm ci
+
+      # tauri-build가 frontendDist가 실재하는지 확인하므로 먼저 만들어 둡니다.
+      # 여기서는 번들을 만들지 않으니 이 빌드가 유일한 프런트 산출물입니다.
+      - run: npm run build
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --locked --all-targets

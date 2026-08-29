@@ -21,9 +21,11 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 # tray-icon: 위젯이 항상 맨 아래에 깔리고 작업표시줄에도 없으므로,
 # 트레이가 유일한 되찾기 수단입니다. image-png는 트레이 아이콘 디코딩용.
-tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
+# macos-private-api: macOS에서 투명 창을 쓰려면 필요합니다. 이게 없으면
+# 위젯이 그냥 불투명한 검은 판이 됩니다. Windows 빌드에는 아무 영향이 없고,
+# tauri.conf.json의 macOSPrivateApi와 짝이 맞지 않으면 빌드가 거부됩니다.
+tauri = { version = "2.11.3", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-log = "2"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-global-shortcut = "2.3.2"
@@ -35,4 +37,19 @@ rrule = "0.14.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
 reqwest = "0.13.3"
+
+# 캘린더 주소는 OS의 자격 증명 저장소에 둡니다. 뒷단은 플랫폼마다 다르고,
+# 고르지 않으면 keyring이 아무 데도 저장하지 않는 mock으로 조용히 넘어갑니다.
+# 그러면 주소가 사라진 걸 사용자가 캘린더를 다시 등록할 때에야 알게 됩니다.
+# 지원하지 않는 플랫폼에서는 차라리 빌드가 깨지도록 각 target에만 둡니다.
+
+[target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", features = ["apple-native"] }
+# 위젯을 Mission Control의 사정권 밖에 두는 데 씁니다(desktop/macos.rs).
+# tao가 이미 같은 버전을 끌어오므로 컴파일 시간은 늘지 않습니다.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder"] }

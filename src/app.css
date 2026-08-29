@@ -1,5 +1,10 @@
 :root {
-  font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
+  /* Windows 갈래가 먼저, 그다음 macOS 갈래. 이름이 겹치지 않으므로
+     양쪽 모두 자기 것을 첫 줄에서 찾습니다. 한글은 SF Pro에 없어
+     Apple SD Gothic Neo로 한 번 더 떨어집니다 — 배치를 실측으로
+     계산하는 위젯이라 어느 글꼴이 잡히는지가 곧 레이아웃입니다. */
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Malgun Gothic',
+    -apple-system, 'Apple SD Gothic Neo', system-ui, sans-serif;
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
 }

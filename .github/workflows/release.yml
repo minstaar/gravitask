@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
 
     steps:
@@ -36,6 +36,9 @@ jobs:
 
       # 명세는 배포 전에 반드시 통과해야 합니다. 제목 파싱이 깨지면 사용자가
       # 적은 내용이 조용히 잘려 나가고, 배치가 깨지면 위젯이 화면을 가로막습니다.
+      #
+      # 플랫폼을 타지 않는 검사라 한 번만 돕니다. 양쪽에서 돌리면 릴리스가
+      # 느려질 뿐 새로 알게 되는 것이 없습니다.
       - name: 명세 (파싱 · 표기 · 배치)
         run: npm test
 
@@ -51,11 +54,72 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Gravitask ${{ github.ref_name }}'
           releaseBody: |
-            ### 설치
+            ### Windows
 
             아래 `.exe`를 받아 실행하세요.
 
             서명 인증서가 아직 없어 첫 실행에서 SmartScreen 경고가 뜹니다.
             **추가 정보 → 실행**을 눌러 진행하시면 됩니다.
+
+            ### macOS
+
+            아래 `.dmg`를 받아 열고 `Gravitask`를 `Applications`로 끌어다 놓으세요.
+            Intel·Apple Silicon 공용입니다.
+
+            역시 서명 인증서가 없어 그냥 열면 **"손상되었기 때문에 열 수
+            없습니다"**가 뜹니다. 앱이 망가진 게 아니라 Gatekeeper가 서명 없는
+            앱에 붙이는 문구입니다. 터미널에서 아래 한 줄을 실행한 뒤 여세요.
+
+            ```
+            xattr -dr com.apple.quarantine /Applications/Gravitask.app
+            ```
+
+            위젯은 Dock에 뜨지 않습니다. 메뉴 막대의 트레이 아이콘으로
+            보이기·숨기기·종료를 합니다.
           releaseDraft: true
           prerelease: false
+          args: --bundles nsis
+
+  macos:
+    # Windows가 끝난 뒤에 돕니다.
+    #
+    # 두 잡이 같은 릴리스의 latest.json을 고쳐 씁니다. 업데이터는 그 파일
+    # 하나에서 플랫폼별 내려받기 주소를 찾으므로, 동시에 쓰면 늦게 끝난 쪽이
+    # 먼저 끝난 쪽의 항목을 지워 버릴 수 있습니다. 그러면 한쪽 사용자 전원이
+    # 업데이트 경로를 잃습니다. 몇 분 늦는 것과 바꿀 만한 위험이 아닙니다.
+    needs: windows
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # 친구가 Intel을 쓰는지 Apple Silicon을 쓰는지 물어보지 않아도 되게
+          # 하나로 합쳐 냅니다. 어느 쪽이 안 되는지 알아내는 왕복이 통째로
+          # 사라집니다.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # 이름과 본문은 Windows 잡이 이미 썼습니다. 여기서 다시 주면
+          # 덮어써서 한쪽 안내가 사라집니다. 태그로 초안을 찾아 붙이기만 합니다.
+          tagName: ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          args: --target universal-apple-darwin --bundles app,dmg

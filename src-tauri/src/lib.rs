@@ -43,11 +43,6 @@ fn raw_handle(window: &WebviewWindow) -> Option<isize> {
     window.hwnd().ok().map(|h| h.0 as isize)
 }
 
-#[cfg(not(windows))]
-fn raw_handle(_window: &WebviewWindow) -> Option<isize> {
-    None
-}
-
 /// 위젯을 '바탕화면 바로 위'에 세워 둡니다.
 ///
 /// alwaysOnBottom을 쓰지 않는 이유는 그것이 바탕화면보다도 아래로 보내기
@@ -93,7 +88,26 @@ fn spawn_desktop_parker(app: &AppHandle, state: Arc<WidgetState>) {
     });
 }
 
-#[cfg(not(windows))]
+/// macOS에서는 자리를 지키러 다닐 필요가 없습니다.
+///
+/// 창 레벨 -1이 이미 '모든 앱 창보다 아래, 배경화면보다는 위'이고, 아무도
+/// 우리를 거기서 밀어내지 않습니다. Win+D에 해당하는 '데스크탑 보기'도
+/// z-order가 아니라 창에 붙는 성질 하나로 막습니다(desktop/macos.rs).
+/// 그래서 여기서는 한 번 세워 두기만 합니다.
+///
+/// 이름을 Windows 쪽과 맞춘 것은 부르는 자리를 하나로 두기 위해서입니다.
+/// 두 경로가 같은 줄에서 갈라져야 나란히 읽힙니다.
+#[cfg(target_os = "macos")]
+fn spawn_desktop_parker(app: &AppHandle, _state: Arc<WidgetState>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    // setup()은 메인 스레드에서 돕니다. AppKit을 만지려면 그래야 합니다.
+    desktop::exempt_from_expose(&window);
+    desktop::park(&window, false);
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn spawn_desktop_parker(_app: &AppHandle, _state: Arc<WidgetState>) {}
 
 /// 옮겨 놓은 자리를 그때그때 적어 둡니다.
@@ -355,6 +369,14 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
                     if pinned {
                         let _ = window.set_focus();
                     }
+                    // macOS에서 set_always_on_top(false)는 창을 '보통' 레벨로
+                    // 되돌립니다. 그대로 두면 고정을 풀 때마다 위젯이 다른 앱
+                    // 창과 같은 층에 남아 앞을 가로막습니다. Windows에서는
+                    // 폴링이 다음 순번에 알아서 처리하는 자리입니다.
+                    #[cfg(target_os = "macos")]
+                    if !pinned {
+                        desktop::park(&window, false);
+                    }
                 }
                 "quit" => app.exit(0),
                 _ => {}
@@ -439,10 +461,20 @@ pub fn run() {
                 let focus_state = state.clone();
                 let moved = Arc::new(AtomicBool::new(false));
                 let dirty = moved.clone();
+                #[cfg(target_os = "macos")]
+                let park_window = window.clone();
 
                 window.on_window_event(move |event| match event {
                     WindowEvent::Focused(focused) => {
                         focus_state.focused.store(*focused, Ordering::Relaxed);
+                        // macOS에는 자리를 되찾아 주는 폴링이 없습니다. 여기가
+                        // 유일한 왕복 지점입니다 — 클릭하면 올라오고, 포커스를
+                        // 잃으면 내려갑니다. 고정 중에는 건드리지 않습니다.
+                        // 그게 고정의 뜻입니다.
+                        #[cfg(target_os = "macos")]
+                        if !focus_state.pinned.load(Ordering::Relaxed) {
+                            desktop::park(&park_window, *focused);
+                        }
                     }
                     WindowEvent::Moved(_) => dirty.store(true, Ordering::Relaxed),
                     _ => {}
