@@ -471,6 +471,11 @@ pub fn run() {
                 hidden: AtomicBool::new(false),
             });
 
+            // 이벤트 루프에서도 상태에 닿아야 합니다. 앱을 다시 실행해 위젯을
+            // 꺼내는 경로(아래 Reopen)가 '숨김'을 풀어야 하는데, 그 처리는
+            // setup이 끝난 뒤에 도는 자리라 여기서 넘겨 두는 수밖에 없습니다.
+            app.manage(state.clone());
+
             build_tray(app, state.clone())?;
 
             if let Some(window) = app.get_webview_window("main") {
@@ -512,6 +517,33 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_handle, _event| {
+            // 트레이 아이콘을 잃었을 때 위젯을 되찾는 길.
+            //
+            // macOS 메뉴 막대는 자리가 모자라면 아이콘을 말없이 숨깁니다.
+            // 노치가 있는 맥북에서 항목이 많으면 그 뒤로 밀려 아예 보이지
+            // 않습니다. Windows 트레이처럼 넘친 것을 모아 주는 버튼이 없어서,
+            // 위젯을 되찾는 유일한 손잡이가 소리 없이 사라질 수 있습니다.
+            //
+            // 그때 사람이 실제로 하는 행동은 정해져 있습니다 — 앱을 다시
+            // 실행합니다. macOS는 이미 도는 앱을 두 번 띄우지 않고 대신 이
+            // 이벤트를 보냅니다. 받지 않으면 아무 일도 일어나지 않고,
+            // 사용자가 보기에 앱은 고장 난 것입니다.
+            //
+            // 단축키를 메뉴에 적어 두는 방법도 생각했지만 그건 답이 아닙니다.
+            // 메뉴를 열 수 있어야 읽을 수 있는데, 문제는 메뉴를 못 여는
+            // 상황입니다.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(state) = _handle.try_state::<Arc<WidgetState>>() {
+                    state.hidden.store(false, Ordering::Relaxed);
+                }
+                if let Some(window) = _handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }
