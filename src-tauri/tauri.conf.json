@@ -21,6 +21,7 @@
         "transparent": true,
         "decorations": false,
         "shadow": false,
+        "backgroundColor": "#00000000",
 
         "skipTaskbar": true,
         "visibleOnAllWorkspaces": true,
