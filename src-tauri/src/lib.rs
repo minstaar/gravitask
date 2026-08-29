@@ -449,6 +449,22 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 
+            // Dock에 아이콘을 두지 않습니다. skipTaskbar의 macOS 짝입니다.
+            //
+            // Info.plist의 LSUIElement가 같은 일을 하고, 그쪽이 더 낫습니다 —
+            // 실행 순간부터 적용되어 아이콘이 떴다 사라지는 깜빡임이 없습니다.
+            // 그런데 그 값이 번들에 실제로 박혔는지는 앱이 켜져 봐야 알 수
+            // 있고, 안 박혔을 때 사용자가 보는 것은 '작업표시줄에 뜨지
+            // 않는다'는 약속이 깨진 위젯입니다. 위젯은 트레이로 되찾는
+            // 물건이라 Dock에 있으면 되찾는 길이 두 개가 되고, 그중 하나는
+            // 우리가 관리하지 않는 길입니다.
+            //
+            // 그래서 여기서 한 번 더 못 박습니다. plist가 제대로 들어갔다면
+            // 이 호출은 이미 accessory인 상태를 다시 지정하는 것이라 아무
+            // 일도 하지 않습니다. 들어가지 않았다면 이 줄이 마지막 방어선입니다.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let state = Arc::new(WidgetState {
                 focused: AtomicBool::new(false),
                 pinned: AtomicBool::new(false),
