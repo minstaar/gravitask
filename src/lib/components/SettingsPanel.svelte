@@ -187,6 +187,17 @@
   let updateBusy = $state(false);
   let updateNote = $state('');
   let progress = $state<number | null>(null);
+  /**
+   * 실패한 사유. 상태줄이 아니라 아래 한 줄을 통째로 씁니다.
+   *
+   * 이 앱은 남의 컴퓨터에서 돕니다. 실패를 '실패'라고만 적으면 무엇이
+   * 잘못됐는지 알아낼 통로가 사라집니다 — 사용자가 화면에서 읽어 전해 주는
+   * 것 말고는 방법이 없는데, 화면에 아무 말도 없으니까요.
+   *
+   * 그래서 사라지지 않습니다. 다음에 다시 누를 때까지 남습니다. 캘린더
+   * 오류를 적는 방식과 같습니다.
+   */
+  let updateWhy = $state('');
 
   /**
    * ' 업데이트'라는 이름은 그대로 두고 상태만 옆에 씁니다.
@@ -218,10 +229,30 @@
     setTimeout(() => (updateNote = ''), 4000);
   }
 
+  /**
+   * 사유를 사람이 할 수 있는 말로 옮깁니다.
+   *
+   * "Read-only file system (os error 30)"은 개발자에게만 뜻이 있습니다. 받는
+   * 사람에게 필요한 것은 무엇이 잘못됐는지가 아니라 무엇을 하면 되는지입니다.
+   *
+   * 못 알아본 사유는 손대지 않고 그대로 보여 줍니다. 읽는 사람이 뜻을
+   * 모르더라도 전해 줄 수는 있고, 그게 우리가 원인에 닿는 유일한 길입니다.
+   */
+  function explain(reason: string): string {
+    if (/read-only|os error 30/i.test(reason))
+      return '앱이 읽기 전용 위치에 있습니다. 응용 프로그램 폴더로 옮긴 뒤 다시 시도하세요.';
+    if (/permission|denied|os error 13/i.test(reason))
+      return '앱을 바꿀 권한이 없습니다. 응용 프로그램 폴더로 옮긴 뒤 다시 시도하세요.';
+    if (/signature|verify|minisign/i.test(reason))
+      return '서명을 확인하지 못했습니다. 받은 파일이 손상됐을 수 있습니다.';
+    return reason;
+  }
+
   async function onUpdateClick() {
     if (updateBusy) return;
     updateBusy = true;
     updateNote = '';
+    updateWhy = '';
     try {
       if (newVersion) {
         await installUpdate(); // 성공하면 앱이 재시작하므로 여기로 돌아오지 않습니다
@@ -231,7 +262,9 @@
         if (!found) note('최신입니다');
       }
     } catch (err) {
-      note(String(err).includes('최신') ? '최신입니다' : '실패 — 다시 시도');
+      const reason = String(err);
+      if (reason.includes('최신')) note('최신입니다');
+      else updateWhy = explain(reason);
     } finally {
       updateBusy = false;
       progress = null;
@@ -555,6 +588,7 @@
           {newVersion ? '설치' : '확인'}
         </button>
       </div>
+      {#if updateWhy}<div class="row why"><span>{updateWhy}</span></div>{/if}
     </div>
 
     <!-- 스크롤바를 두지 않기로 했으므로 "더 있다"는 이 그늘로만 전해집니다 -->

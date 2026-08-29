@@ -235,7 +235,10 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
     let update = updater
         .check()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            log::error!("업데이트 확인 실패: {e}");
+            e.to_string()
+        })?
         .ok_or_else(|| "이미 최신 버전입니다".to_string())?;
 
     let mut got: u64 = 0;
@@ -254,7 +257,14 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
             },
         )
         .await
-        .map_err(|e| e.to_string())?;
+        // 설치는 남의 컴퓨터에서 일어납니다. 여기서 남기지 않으면 무엇이
+        // 잘못됐는지 알아낼 방법이 화면을 읽어 전해 주는 것뿐이고, 그 화면이
+        // 아무 말도 안 하면 통로가 아예 없습니다. 배포판이 경고 이상만
+        // 남기므로 error로 적습니다.
+        .map_err(|e| {
+            log::error!("업데이트 설치 실패: {e}");
+            e.to_string()
+        })?;
 
     // 재시작 직전에 자리를 직접 적어 둡니다. restart()는 정상 종료 경로를 타지
     // 않아서, 플러그인이 저장할 기회를 얻지 못한 채 프로세스가 갈아치워집니다.
