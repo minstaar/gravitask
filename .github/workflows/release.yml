@@ -79,8 +79,13 @@ jobs:
             xattr -dr com.apple.quarantine /Applications/Gravitask.app
             ```
 
-            위젯은 Dock에 뜨지 않습니다. 메뉴 막대의 트레이 아이콘으로
-            보이기·숨기기·종료를 합니다.
+            위젯은 Dock에도 Cmd+Tab에도 뜨지 않습니다. 바탕화면에 깔아 두는
+            물건이지 오가며 전환하는 앱이 아니라서요. 메뉴 막대 오른쪽의
+            아이콘으로 보이기·숨기기·종료를 합니다.
+
+            **그 아이콘이 안 보이면 Gravitask를 그냥 다시 실행하세요.**
+            메뉴 막대는 자리가 모자라면 아이콘을 말없이 숨깁니다. 다시 열면
+            위젯이 나타납니다 — 앱이 두 개 뜨지는 않습니다.
           releaseDraft: true
           prerelease: false
           args: --bundles nsis
