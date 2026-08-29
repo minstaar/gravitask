@@ -135,7 +135,6 @@
     gap: 8px;
     padding: 0 8px 0 9px;
     border: 1px solid rgba(255, 255, 255, 0.09);
-    overflow: hidden;
     box-sizing: border-box;
     height: var(--h);
   }
@@ -172,6 +171,7 @@
     position: absolute;
     inset: 0;
     z-index: -1;
+    border-radius: inherit;
     background: var(--surface-solid, rgba(18, 19, 27, 0.97));
     opacity: 0;
   }
@@ -199,10 +199,8 @@
     right: 0;
   }
 
-  .card:hover .title {
-    overflow: visible;
-    text-overflow: clip;
-  }
+  /* 카드가 내용만큼 늘어나므로 여기서 잘리는 것은 상한(폭)에 걸렸을 때뿐입니다.
+     그때는 삐져나가는 것보다 말줄임이 낫습니다 — 카드가 더는 클 수 없으니까요. */
 
 
   /* opacity로 흐리게 하면 스크림 위에서 대비가 4.5:1 아래로 떨어집니다.
@@ -279,23 +277,49 @@
     outline-offset: 2px;
   }
 
-  /* 주변시에 걸리는 유일한 채널. 절대 과하게 쓰지 말 것 */
-  .breathe {
+  /**
+   * 숨쉬기 — 주변시에 걸리는 유일한 채널. 절대 과하게 쓰지 말 것.
+   *
+   * 예전에는 box-shadow 값 자체를 오르내리게 했습니다. 그런데 box-shadow는
+   * 합성기로 넘길 수 없는 속성이라, 매 프레임 요소를 다시 칠하고 16px 흐림을
+   * 다시 굽습니다. 앱이 켜져 있는 내내 그러니 실측해 보니 코어 하나의 4분의
+   * 1을 먹고 있었습니다(GPU 16%, 렌더러 8%). 가만히 있는 위젯이 그럴 이유가
+   * 없고, 저사양 PC에서는 그대로 체감됩니다.
+   *
+   * 빛무리는 ::after에 고정해 두고 opacity만 오르내립니다. opacity는 합성기가
+   * 처리하므로 다시 칠하지 않습니다 — 그림은 한 번만 구워집니다.
+   *
+   * z-index를 내려 카드 배경 뒤에 둡니다. box-shadow가 원래 그 자리에
+   * 그려지던 것이라 보이는 결과는 이전과 같습니다.
+   */
+  .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 3px var(--glow), 0 0 16px var(--glow);
+    opacity: 0;
+  }
+
+  .breathe::after {
+    will-change: opacity;
     animation: breathe 6s ease-in-out infinite;
   }
 
   @keyframes breathe {
     0%,
     100% {
-      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+      opacity: 0;
     }
     50% {
-      box-shadow: 0 0 0 3px var(--glow), 0 0 16px var(--glow);
+      opacity: 1;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .breathe {
+    .breathe::after {
       animation: none;
     }
   }
