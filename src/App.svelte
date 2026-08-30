@@ -281,7 +281,7 @@
       .then(seedIfEmpty)
       .then(settled)
       .then(fitWindow)
-      .catch(() => {})
+      .catch((err) => console.error('첫 배치 실패', err))
       // 크기를 못 맞췄더라도 창은 반드시 보여야 합니다.
       // 잘려 보이는 편이 안 보이는 것보다 낫습니다.
       .finally(revealWindow);
@@ -370,9 +370,17 @@
     if (!inTauri || !panel) return;
     const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
     const rect = panel.getBoundingClientRect();
-    await getCurrentWindow().setSize(
-      new LogicalSize(Math.ceil(rect.width) + PAD * 2, Math.ceil(rect.height) + PAD * 2)
-    );
+    const width = Math.ceil(rect.width) + PAD * 2;
+    const height = Math.ceil(rect.height) + PAD * 2;
+    try {
+      await getCurrentWindow().setSize(new LogicalSize(width, height));
+    } catch (err) {
+      // 조용히 지나가면 창이 내용과 어긋난 채로 남고, 사용자는 위젯 주위에
+      // 설명 없는 여백을 봅니다. 무엇을 요청했는지까지 함께 적습니다 —
+      // 실패했다는 사실만으로는 요청한 크기가 틀렸는지 창이 거부한 것인지
+      // 갈리지 않습니다.
+      console.error(`창 크기 ${width}x${height} 맞추기 실패`, err);
+    }
   }
 
   /**

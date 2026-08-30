@@ -581,6 +581,17 @@
         눌렀는데 아무 표시도 없으면 사용자는 고장과 구분할 수 없습니다.
         '최신입니다'도 답이므로 반드시 적습니다.
       -->
+      <!--
+        버전을 보여 줍니다.
+        스스로 업데이트하는 앱이 자기 버전을 말하지 않으면, 남의 컴퓨터에서
+        무엇이 돌고 있는지 확인할 방법이 없습니다. 고장 신고를 받았을 때
+        가장 먼저 필요한 값입니다.
+      -->
+      <div class="row">
+        <span class="label">버전</span>
+        <span class="status">{__APP_VERSION__}</span>
+      </div>
+
       <div class="row">
         <span class="label">업데이트</span>
         {#if updateStatus}<span class="status" class:ready={newVersion}>{updateStatus}</span>{/if}

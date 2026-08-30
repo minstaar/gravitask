@@ -5,8 +5,23 @@
      계산하는 위젯이라 어느 글꼴이 잡히는지가 곧 레이아웃입니다. */
   font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Malgun Gothic',
     -apple-system, 'Apple SD Gothic Neo', system-ui, sans-serif;
-  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+}
+
+/**
+ * color-scheme을 :root에 두지 않습니다.
+ *
+ * :root에 dark를 걸면 WebKit이 페이지 바탕을 '불투명한 검정'으로 칠합니다.
+ * 투명 창에서는 그게 곧 창 전체가 검은 판이 된다는 뜻입니다 — 뒤의 배경화면이
+ * 비칠 자리를 웹뷰가 먼저 덮어 버립니다. WebView2는 이러지 않아서 Windows에서만
+ * 만들 때는 드러나지 않았습니다.
+ *
+ * 우리가 이 속성에서 원한 것은 바탕색이 아니라 입력칸·선택기 같은 기본 컨트롤이
+ * 어두운 판으로 그려지는 것뿐입니다. 그건 상속되는 성질이라 앱 뿌리에 걸어도
+ * 똑같이 얻어집니다. 페이지 바탕만 건드리지 않게 한 칸 내려 답니다.
+ */
+main {
+  color-scheme: dark;
 }
 
 * {
