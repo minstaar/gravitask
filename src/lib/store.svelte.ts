@@ -200,6 +200,20 @@ export interface UndoEntry {
   /** 되돌리는 방법이 소스마다 달라서 어디서 왔는지 함께 들고 다닙니다 */
   sourceId: string;
   occurrenceKey: string;
+  /**
+   * 무엇을 되돌리는가. 완료와 삭제는 같은 Ctrl+Z를 쓰지만 되돌리는 길이
+   * 다릅니다 — 완료는 기록에서 꺼내 오고, 삭제는 기록에 없습니다.
+   */
+  kind: 'complete' | 'delete';
+  /**
+   * 지운 항목 그 자체. 삭제일 때만 있습니다.
+   *
+   * 삭제한 것을 완료 기록에 넣어 두고 거기서 꺼내는 방법도 있지만, 그러면
+   * 기록이 거짓말을 하게 됩니다. 기록은 '한 일'이고 지운 것은 하지 않은
+   * 일입니다. 되돌리기 스택은 어차피 이 실행 동안만 사는 값이라, 지운 항목을
+   * 여기 들고 있는 편이 맞습니다.
+   */
+  task?: Task;
 }
 
 const UNDO_DEPTH = 10;
@@ -392,15 +406,20 @@ export async function completeTask(task: Task): Promise<void> {
     await markDone(occurrenceOf(task), at);
   }
 
-  undo.stack.push({
+  pushUndo({
     id: task.id,
     title: task.title,
     sourceId: src.id,
     occurrenceKey: occurrenceOf(task),
+    kind: 'complete',
   });
-  if (undo.stack.length > UNDO_DEPTH) undo.stack.shift();
 
   await refresh();
+}
+
+function pushUndo(entry: UndoEntry): void {
+  undo.stack.push(entry);
+  if (undo.stack.length > UNDO_DEPTH) undo.stack.shift();
 }
 
 /**
@@ -411,6 +430,19 @@ export async function completeTask(task: Task): Promise<void> {
  * 나타납니다.
  */
 export async function undoEntry(entry: UndoEntry): Promise<boolean> {
+  // 지운 것은 기록에 없습니다. 스택이 들고 있던 항목을 그대로 도로 넣습니다 —
+  // insert는 add와 달리 원래 id를 지키므로, 되살린 항목이 예전 자신입니다.
+  if (entry.kind === 'delete') {
+    if (!entry.task) return false;
+    await source.insert?.(entry.task);
+    // 되살아났으니 알림도 다시 받을 수 있어야 합니다.
+    await forgetTask(entry.id);
+    const i = undo.stack.findIndex((e) => e.id === entry.id);
+    if (i >= 0) undo.stack.splice(i, 1);
+    await refresh();
+    return true;
+  }
+
   const src = sources.get(entry.sourceId);
   if (src && !src.writable) {
     await clearDone(entry.occurrenceKey);
@@ -456,8 +488,40 @@ export async function undoLast(): Promise<UndoEntry | null> {
   return null;
 }
 
-export async function removeTask(id: string): Promise<void> {
-  await source.remove?.(id);
+/**
+ * 이미 있는 할 일을 고칩니다.
+ *
+ * 완료와 달리 기록으로 옮기지 않습니다. 고치는 것은 "이 일이 원래 이랬다"는
+ * 정정이지 "했다"가 아니라서, 지난 기록에 남길 것이 없습니다.
+ */
+export async function updateTask(
+  id: string,
+  patch: Partial<Omit<Task, 'id'>>
+): Promise<void> {
+  await source.update?.(id, patch);
+  await refresh();
+}
+
+/**
+ * 지웁니다 — 그리고 되돌릴 수 있습니다.
+ *
+ * 확인 절차를 두지 않습니다. 완료가 한 번에 되는데 삭제만 두 번 눌러야 하면
+ * 그건 다른 물건처럼 느껴집니다. 둘 다 즉시 일어나고 둘 다 Ctrl+Z로 돌아오는
+ * 편이, 확인 창을 띄우는 것보다 오히려 안전합니다 — 확인 창은 읽지 않고 누르는
+ * 습관을 만들지만 되돌리기는 실제로 되돌립니다.
+ */
+export async function removeTask(task: Task): Promise<void> {
+  await source.remove?.(task.id);
+
+  pushUndo({
+    id: task.id,
+    title: task.title,
+    sourceId: sourceOf(task).id,
+    occurrenceKey: occurrenceOf(task),
+    kind: 'delete',
+    task,
+  });
+
   await refresh();
 }
 

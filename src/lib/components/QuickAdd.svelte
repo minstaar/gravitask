@@ -1,19 +1,33 @@
 ﻿<script lang="ts">
   import { theme } from '../theme';
   import { parseTaskInput } from '../parseInput';
-  import type { Category, NewTask } from '../types';
+  import type { Category, NewTask, Task } from '../types';
 
   let {
     categories,
     categoryId = $bindable(),
     now,
     onAdd,
+    editing = null,
+    onEdit,
+    onCancelEdit,
     openSheet = $bindable(null),
   }: {
     categories: Category[];
     categoryId: string;
     now: number;
     onAdd: (t: NewTask) => void;
+    /**
+     * 고치는 중인 할 일. null이면 새로 적는 중입니다.
+     *
+     * 수정 폼을 따로 만들지 않는 이유는 어려운 부분이 UI가 아니라 파싱이기
+     * 때문입니다. 제목과 마감을 나누고, 주제를 고르고, 날짜·시각을 직접
+     * 지정하는 일을 여기가 이미 다 합니다. 폼을 하나 더 만들면 같은 말을 하는
+     * 방법이 둘이 되고, 파서가 바뀔 때마다 양쪽을 맞춰야 합니다.
+     */
+    editing?: Task | null;
+    onEdit: (id: string, patch: { title: string; due: number; categoryId: string }) => void;
+    onCancelEdit: () => void;
     /**
      * 지금 열려 있는 팝오버. 셋 중 하나만 열리므로 한 칸이면 충분합니다.
      *
@@ -37,7 +51,7 @@
   let overrideTime = $state('');
 
   const parsed = $derived(parseTaskInput(text, new Date(now)));
-  const ready = $derived(parsed.title.length > 0);
+  const ready = $derived(editing ? text.trim().length > 0 : parsed.title.length > 0);
   const selected = $derived(categories.find((c) => c.id === categoryId) ?? categories[0]);
 
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -158,10 +172,45 @@
     closeAll();
   }
 
+  /**
+   * 고칠 항목을 입력칸에 싣습니다.
+   *
+   * loadedId를 $state로 두지 않는 것은 이 효과가 스스로를 다시 부르지 않게
+   * 하기 위해서입니다. 여기서 보는 것은 editing 하나뿐이어야 합니다.
+   */
+  let loadedId: string | null = null;
+  $effect(() => {
+    const t = editing;
+    if (t) {
+      if (t.id === loadedId) return;
+      loadedId = t.id;
+      const d = new Date(t.due);
+      text = t.title;
+      // 저장된 마감은 이미 사용자가 정한 값입니다. 그래서 파싱 결과가 아니라
+      // override 자리에 싣습니다 — 그러지 않으면 '내일 회의 준비' 같은 제목을
+      // 되돌려 넣는 순간 파서가 '내일'을 마감으로 도로 집어가고 제목에서
+      // 떼어냅니다. 멀쩡하던 제목이 조용히 잘려 나가는 것입니다.
+      overrideDate = toDate(d);
+      overrideTime = toTime(d);
+      categoryId = t.categoryId;
+      closeAll();
+      input?.focus();
+    } else if (loadedId !== null) {
+      loadedId = null;
+      reset();
+    }
+  });
+
   function submit(e: SubmitEvent) {
     e.preventDefault();
     if (!ready) return;
-    onAdd({ title: parsed.title, due: dueAt.getTime(), categoryId });
+    if (editing) {
+      // 수정 모드에서 제목은 적힌 글자 그대로입니다. 마감은 아래 칩이 이미
+      // 들고 있으므로 제목에서 다시 뽑을 이유가 없습니다.
+      onEdit(editing.id, { title: text.trim(), due: dueAt.getTime(), categoryId });
+    } else {
+      onAdd({ title: parsed.title, due: dueAt.getTime(), categoryId });
+    }
     reset();
     input?.focus();
   }
@@ -231,13 +280,22 @@
       autocomplete="off"
     />
 
-    <button type="submit" class="submit" disabled={!ready}>추가</button>
+    <button type="submit" class="submit" disabled={!ready}>{editing ? '수정' : '추가'}</button>
   </div>
 
   <!-- 날짜·시각도 직접 그립니다. 네이티브 입력은 달력과 목록 모양을 OS가
        정해서 위젯과 따로 놀고, 지우기 버튼처럼 우리가 원치 않는 조작도 끼어듭니다. -->
   <div class="row due">
     <span class="lbl">마감</span>
+    {#if editing}
+      <!-- 취소는 수정 버튼 바로 아래, 같은 크기·같은 자리에 둡니다. 손이 이미
+           그 자리를 알고 있으니 찾을 필요가 없습니다. 다만 색은 한 단계
+           물러나 있습니다 — 나가는 문이지 주된 행동이 아닙니다.
+
+           보이는 출구가 반드시 있어야 합니다. Esc로도 나갈 수 있지만 그건
+           보이지 않고, 모드에 갇힌 사람은 갇혔다는 것부터 모릅니다. -->
+      <button type="button" class="cancel" onclick={onCancelEdit}>취소</button>
+    {/if}
 
     <div class="picker">
       <button
@@ -398,6 +456,26 @@
     border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 9px;
     padding: 8px 11px;
+  }
+
+  /* 수정 버튼과 같은 크기·같은 자리. order로 줄 끝에 세우고 margin-left:auto가
+     그 앞의 빈자리를 먹습니다. 색만 한 단계 물러나 있습니다. */
+  .cancel {
+    font: inherit;
+    font-size: 13px;
+    color: rgba(237, 237, 245, 0.62);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 9px;
+    padding: 8px 11px;
+    margin-left: auto;
+    order: 9;
+    cursor: pointer;
+  }
+
+  .cancel:hover {
+    color: #ededf5;
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .title {

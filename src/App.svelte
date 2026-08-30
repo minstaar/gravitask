@@ -2,6 +2,7 @@
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
+  import CardMenu from './lib/components/CardMenu.svelte';
   import {
     addCalendar,
     addCategory,
@@ -13,6 +14,7 @@
     nudgeZoom,
     removeCalendar,
     removeCategory,
+    removeTask,
     renameCategory,
     startCalendarPolling,
     syncCalendars,
@@ -23,6 +25,7 @@
     store,
     undo,
     undoLast,
+    updateTask,
     view,
     wasSeeded,
     ZOOM_STEPS,
@@ -61,22 +64,56 @@
    * 역할만 합니다. 그래서 팝업이 사라져도 Ctrl+Z는 계속 듣습니다 — 버튼에
    * 단축키를 같이 적어 그 사실을 알립니다.
    */
-  let toast = $state<{ title: string } | null>(null);
+  let toast = $state<{ title: string; kind: 'complete' | 'delete' } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   const UNDO_WINDOW = 7000;
 
-  function onComplete(task: Task) {
-    void completeTask(task);
-    toast = { title: task.title };
+  function flash(title: string, kind: 'complete' | 'delete') {
+    toast = { title, kind };
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toast = null), UNDO_WINDOW);
+  }
+
+  function onComplete(task: Task) {
+    void completeTask(task);
+    flash(task.title, 'complete');
   }
 
   async function undoComplete() {
     if (!(await undoLast())) return;
     clearTimeout(toastTimer);
     toast = null;
+  }
+
+  /* ---------- 카드 우클릭: 수정과 삭제 ---------- */
+
+  let menu = $state<{ task: Task; x: number; y: number } | null>(null);
+
+  /**
+   * 고치는 중인 항목.
+   *
+   * 이름이 editTarget인 것은 이 파일에 이미 editing이 있기 때문입니다 —
+   * 그쪽은 설정 화면이 열렸는지를 가리킵니다.
+   */
+  let editTarget = $state<Task | null>(null);
+
+  function startEdit(task: Task) {
+    menu = null;
+    editTarget = task;
+  }
+
+  function onDelete(task: Task) {
+    menu = null;
+    // 지우는 항목을 고치던 중이었다면 그 상태도 함께 놓아 줍니다.
+    if (editTarget?.id === task.id) editTarget = null;
+    void removeTask(task);
+    flash(task.title, 'delete');
+  }
+
+  function commitEdit(id: string, patch: { title: string; due: number; categoryId: string }) {
+    void updateTask(id, patch);
+    editTarget = null;
   }
 
   /**
@@ -321,6 +358,12 @@
         e.preventDefault();
         quickAdd?.focus();
       }
+      // Esc는 안쪽부터 벗깁니다. 달력이나 시각 목록이 열려 있으면 QuickAdd가
+      // 먼저 그것을 닫고, 여기까지 올라오면 수정 모드를 놓습니다.
+      if (e.key === 'Escape' && editTarget) {
+        editTarget = null;
+      }
+
       // 되돌리기는 Ctrl+Z여야 합니다. 다른 곳에서 몸에 밴 동작입니다.
       // 팝업이 떠 있는지와 무관하게, 스택에 남아 있으면 듣습니다.
       if (e.key === 'z' && (e.ctrlKey || e.metaKey) && undo.stack.length > 0) {
@@ -352,7 +395,16 @@
     if (!inTauri) return;
     let stop: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) =>
-      listen('gravitask://focus-input', () => quickAdd?.focus()).then((un) => {
+      listen('gravitask://focus-input', () => {
+        // 이 단축키는 언제나 같은 상태를 보장합니다 — 빈 입력칸, 커서,
+        // 추가 준비. 수정 중이었다면 놓습니다.
+        //
+        // 그러지 않으면 사용자는 새 할 일을 적는다고 믿으면서 기존 항목을
+        // 덮어씁니다. 여기서 버리는 것은 아직 확정하지 않은 초안이지만,
+        // 반대쪽에서 잃는 것은 이미 저장된 값입니다.
+        editTarget = null;
+        quickAdd?.focus();
+      }).then((un) => {
         stop = un;
       })
     );
@@ -498,6 +550,9 @@
       bind:openSheet
       now={store.now}
       onAdd={addTask}
+      editing={editTarget}
+      onEdit={commitEdit}
+      onCancelEdit={() => (editTarget = null)}
     />
 
 
@@ -509,7 +564,9 @@
       budget={columnBudget}
       zoom={view.zoom}
       perPage={view.perPage}
+      heldId={editTarget?.id ?? null}
       onToggle={onComplete}
+      onMenu={(task, x, y) => (menu = { task, x, y })}
     />
 
     {#if editing}
@@ -554,7 +611,7 @@
 
     {#if toast}
       <div class="undo">
-        <span class="done-title">완료 · {toast.title}</span>
+        <span class="done-title">{toast.kind === 'delete' ? '지움' : '완료'} · {toast.title}</span>
         <button onclick={() => void undoComplete()}>되돌리기 <kbd>{MOD_LABEL}Z</kbd></button>
       </div>
     {/if}
@@ -563,6 +620,19 @@
     <div class="reserve" bind:this={spacer} style:height="{reserve}px" aria-hidden="true"></div>
   </div>
 </main>
+
+<!-- 메뉴는 main 밖에 둡니다. 안에 두면 clip-path와 overflow가 걸린 구역들
+     안쪽에서 열려 잘립니다. 어차피 커서 좌표에 붙는 물건이라 자리도 자유롭습니다. -->
+{#if menu}
+  <CardMenu
+    task={menu.task}
+    x={menu.x}
+    y={menu.y}
+    onEdit={startEdit}
+    onDelete={onDelete}
+    onClose={() => (menu = null)}
+  />
+{/if}
 
 <style>
   main {

@@ -15,7 +15,9 @@
     flip = false,
     room = 300,
     reducedMotion = false,
+    held = false,
     onToggle,
+    onMenu,
   }: {
     task: Task;
     visual: Visual;
@@ -27,7 +29,16 @@
     /** 펼칠 수 있는 최대 폭. 패널 밖으로 나가면 창이 잘라 버립니다 */
     room?: number;
     reducedMotion?: boolean;
+    /**
+     * 지금 고치는 중인 카드인가.
+     *
+     * 표시만 하는 값이 아닙니다. 붙잡힌 카드는 완료되지 않습니다 — 마감을
+     * 잘못 넣어 되돌리는 중에 그 항목이 기록으로 옮겨 가 버리면, 고치던 값을
+     * 어디에 쓸지가 사라집니다. 상태를 나중에 수습하는 대신 만들지 않습니다.
+     */
+    held?: boolean;
     onToggle: (t: Task) => void;
+    onMenu: (t: Task, x: number, y: number) => void;
   } = $props();
 
   // 카드가 경계를 넘어 활주로로 떨어지는 순간이 이 위젯의 핵심 알림입니다.
@@ -90,8 +101,14 @@
      목표 위치를 따로 노출해야 배치 로직을 검증할 수 있습니다. -->
 <div
   class="card"
+  role="listitem"
   class:flip
   class:breathe={visual.breathe && visual.zone !== 'queue'}
+  class:held
+  oncontextmenu={(e) => {
+    e.preventDefault();
+    onMenu(task, e.clientX, e.clientY);
+  }}
   data-zone={visual.zone}
   data-target={targetY}
   style:--room="{room}px"
@@ -111,6 +128,7 @@
     style:border-color={withAlpha(visual.color, 0.7)}
     style:background={justDone ? visual.color : null}
     onclick={complete}
+    disabled={held}
     aria-label="{task.title} 완료"
   ></button>
 
@@ -287,6 +305,24 @@
 
   .check:hover {
     background: rgba(255, 255, 255, 0.18);
+  }
+
+  .check:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  /**
+   * 고치는 중인 카드.
+   *
+   * 입력칸의 '수정' 글자만으로는 무엇을 고치는 중인지 알 수 없습니다. 카드가
+   * 열 장이면 열 장 중 어느 것인지 말해 주는 것이 없습니다. 여기서 그걸
+   * 말합니다 — 그리고 이 표시는 장식이 아니라 뜻입니다. 표시가 붙어 있는
+   * 동안 이 카드는 완료되지 않습니다.
+   */
+  .card.held {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 1px;
   }
 
   :global(button:focus-visible) {

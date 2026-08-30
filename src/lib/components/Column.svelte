@@ -13,7 +13,9 @@
     budget,
     zoom = 1,
     perPage = 4,
+    heldId = null,
     onToggle,
+    onMenu,
   }: {
     tasks: Task[];
     categories: Category[];
@@ -25,7 +27,10 @@
     budget?: number;
     /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
     zoom?: number;
+    /** 지금 고치는 중인 카드의 id. 그 카드만 표시가 붙고 완료가 막힙니다 */
+    heldId?: string | null;
     onToggle: (t: Task) => void;
+    onMenu: (t: Task, x: number, y: number) => void;
   } = $props();
 
   const L = theme.layout;
@@ -97,6 +102,10 @@
    * 축 표기(12h·DUE)의 자리라 거기까지는 넘어가지 않습니다.
    */
   const laneOffset = (i: number) => i * (laneW + L.laneGap);
+
+  /** 화면에는 안 적지만 읽어 주기는 해야 하는 구역 이름 */
+  const zoneLabel = (zone: string) =>
+    zone === 'overdue' ? '기한 지남' : zone === 'runway' ? '24시간 안쪽' : '예정';
   const roomRight = (i: number) => width - L.gutter - laneOffset(i);
   const roomLeft = (i: number) => laneOffset(i) + laneW;
   const flipOf = (i: number) => roomRight(i) < roomLeft(i);
@@ -359,7 +368,14 @@
               onpointerdown={(e) => startPan(e, lane.category.id, li, zone)}
               onwheel={(e) => wheelPan(e, lane.category.id, li, zone)}
             >
-              <div class="zone-content" style:transform="translateY({offset}px)">
+              <!-- 카드가 우클릭을 받으므로 역할이 필요합니다. 한 구역은 그
+                   구역에 속한 할 일들의 목록이고, 카드 하나가 그 항목입니다. -->
+              <div
+                class="zone-content"
+                role="list"
+                aria-label="{lane.category.name} {zoneLabel(zone)}"
+                style:transform="translateY({offset}px)"
+              >
                 {#each lane.placed.filter((p) => p.zone === zone) as p (p.task.id)}
                   <TaskCard
                     task={p.task}
@@ -370,7 +386,9 @@
                     flip={flipOf(li)}
                     room={roomOf(li)}
                     {reducedMotion}
+                    held={p.task.id === heldId}
                     {onToggle}
+                    {onMenu}
                   />
                 {/each}
               </div>

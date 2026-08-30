@@ -9,6 +9,7 @@
 //! 없느니만 못합니다.
 
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
@@ -73,19 +74,59 @@ fn entry(handle: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEYRING_SERVICE, handle).map_err(|e| format!("자격 증명 저장소를 열지 못했습니다: {e}"))
 }
 
+/// 한 번 꺼낸 주소는 이 프로세스가 사는 동안 들고 있습니다.
+///
+/// 캘린더를 20분마다 받아 오는데, 그때마다 자격 증명 저장소를 다시 열고
+/// 있었습니다. 주소는 그 사이에 바뀌지 않으므로 전부 같은 답을 받으려고 여는
+/// 것입니다.
+///
+/// macOS에서는 이게 그냥 낭비가 아니라 고장으로 보입니다. 키체인은 항목마다
+/// 어떤 앱이 읽어도 되는지를 코드 서명으로 기억하는데, 우리는 ad-hoc 서명이라
+/// 서명이 빌드마다 바뀝니다. 그래서 macOS가 매번 낯선 앱으로 보고 암호를
+/// 묻습니다 — 하루 종일 켜 두면 70번쯤 묻습니다.
+///
+/// 캐시가 서명 문제를 고치지는 않습니다. 그건 Developer ID 인증서로만
+/// 풀립니다. 다만 묻는 횟수를 실행당 한 번으로 줄입니다.
+///
+/// 웹뷰와의 거리는 그대로입니다. 주소는 여전히 Rust 안에만 있고 프런트로
+/// 나가지 않습니다 — 애초에 여기서 읽기로 한 이유가 그것이었습니다.
+fn cache() -> &'static Mutex<HashMap<String, String>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 pub fn save_url(handle: &str, url: &str) -> Result<(), String> {
+    let url = url.trim();
     entry(handle)?
-        .set_password(url.trim())
-        .map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))
+        .set_password(url)
+        .map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))?;
+    // 저장이 성공한 뒤에만 캐시에 넣습니다. 실패한 값을 들고 있으면 다음
+    // 받아오기가 저장되지도 않은 주소를 쓰게 됩니다.
+    cache()
+        .lock()
+        .unwrap()
+        .insert(handle.to_string(), url.to_string());
+    Ok(())
 }
 
 pub fn read_url(handle: &str) -> Result<String, String> {
-    entry(handle)?
+    if let Some(url) = cache().lock().unwrap().get(handle) {
+        return Ok(url.clone());
+    }
+    let url = entry(handle)?
         .get_password()
-        .map_err(|_| "저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())
+        .map_err(|_| "저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())?;
+    cache()
+        .lock()
+        .unwrap()
+        .insert(handle.to_string(), url.clone());
+    Ok(url)
 }
 
 pub fn forget_url(handle: &str) -> Result<(), String> {
+    // 캐시를 먼저 비웁니다. 저장소에서 지우는 데 실패하더라도 이 실행에서는
+    // 더 쓰지 않는 것이 맞습니다 — 사용자는 지우라고 했습니다.
+    cache().lock().unwrap().remove(handle);
     match entry(handle)?.delete_credential() {
         Ok(()) => Ok(()),
         // 이미 없으면 지운 것과 같습니다
