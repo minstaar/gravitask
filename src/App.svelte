@@ -27,7 +27,7 @@
     wasSeeded,
     ZOOM_STEPS,
   } from './lib/store.svelte';
-  import { MOD_LABEL } from './lib/platform';
+  import { isMac, MOD_LABEL } from './lib/platform';
   import { MS_HOUR } from './lib/urgency';
   import { maxTopicsPerPage } from './lib/layout';
   import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
@@ -399,19 +399,47 @@
     return () => observer.disconnect();
   });
 
+  /**
+   * 처음 켠 화면을 안내로 채웁니다.
+   *
+   * 예전에는 그럴듯한 가짜 할 일을 넣었습니다. 그런데 이 위젯에서 카드의
+   * 자리는 시간에 대한 주장입니다 — "발표 자료 준비 2일 뒤"는 읽는 사람의
+   * 일정에 대해 거짓을 말합니다. 사용자는 매번 "내가 이걸 적었나"를 판단해야
+   * 했습니다.
+   *
+   * 안내 카드는 자기가 서 있는 자리를 설명하므로 그 주장이 참입니다. 24시간
+   * 안쪽 카드는 정말로 24시간 안쪽에 있고, 기한 지난 카드는 정말로 지났습니다.
+   *
+   * 문구는 명사로 끝냅니다. 진짜 할 일 제목이 그렇게 생겼기 때문입니다.
+   * 그리고 '대기'나 '활주로' 같은 말은 쓰지 않습니다 — 그건 우리가 설계하며
+   * 붙인 이름이지 사용자가 화면에서 볼 수 있는 것이 아닙니다. 보이는 것으로만
+   * 씁니다: 맨 아래, 왼쪽 동그라미, 우클릭.
+   *
+   * 레인 폭이 158px이라 제목에 쓸 수 있는 것은 한글 여덟 자 남짓입니다.
+   * 그래서 뜻이 담긴 말을 앞에 둡니다 — 잘려도 앞부분만으로 무슨 카드인지
+   * 알 수 있고, 나머지는 카드에 손을 올리면 펼쳐집니다.
+   */
   async function seedIfEmpty() {
     if (store.tasks.length > 0) return;
     if (await wasSeeded()) return;
     await markSeeded();
 
     const now = Date.now();
+    // 휠 확대는 Windows가 Ctrl, macOS가 ⌘입니다. 안내가 자기 화면에서 통하지
+    // 않으면 안내가 아니라 혼란입니다.
+    const zoomKey = isMac ? '⌘' : 'Ctrl';
+
     const demo: NewTask[] = [
-      { title: '확률론 과제 3', due: now + 6 * MS_HOUR, categoryId: 'study' },
-      { title: '졸업요건 신청', due: now + 48 * MS_HOUR, categoryId: 'study' },
-      { title: '논문 초안 제출', due: now + 216 * MS_HOUR, categoryId: 'study' },
-      { title: '학회 등록비 납부', due: now + 624 * MS_HOUR, categoryId: 'study' },
-      { title: '건강검진 예약', due: now + 30 * MS_HOUR, categoryId: 'life' },
-      { title: '월세 이체', due: now + 400 * MS_HOUR, categoryId: 'life' },
+      // 기한이 지나면 맨 아래로 가라앉는다는 것은 처음 뭔가를 놓칠 때까지
+      // 볼 일이 없습니다. 하필 그때가 가장 당황스러운 순간이라 미리 보입니다.
+      { title: '기한 지난 일', due: now - 4 * MS_HOUR, categoryId: 'life' },
+      // 이 카드가 빨갛게 숨 쉬는 자리에 섭니다. 문구가 그 자리를 설명합니다.
+      { title: '24시간 안쪽 일', due: now + 3 * MS_HOUR, categoryId: 'study' },
+      // 이 카드가 나머지를 치우는 도구입니다. 쓰이면서 자기도 사라집니다.
+      { title: '수정·삭제 우클릭', due: now + 48 * MS_HOUR, categoryId: 'study' },
+      { title: '완료는 동그라미', due: now + 144 * MS_HOUR, categoryId: 'life' },
+      { title: '캘린더 자동 추가', due: now + 288 * MS_HOUR, categoryId: 'life' },
+      { title: `크기는 ${zoomKey}+휠`, due: now + 624 * MS_HOUR, categoryId: 'study' },
     ];
     for (const t of demo) await addTask(t);
   }

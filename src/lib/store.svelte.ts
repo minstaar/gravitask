@@ -28,7 +28,7 @@ const ZOOM_KEY = 'reminder-widget:zoom:v1';
 const PER_PAGE_KEY = 'reminder-widget:perPage:v1';
 
 const SEED: Category[] = [
-  { id: 'study', name: '학업', order: 0 },
+  { id: 'study', name: '업무', order: 0 },
   { id: 'life', name: '생활', order: 1 },
 ];
 

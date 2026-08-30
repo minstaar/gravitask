@@ -226,7 +226,7 @@
       bind:value={text}
       type="text"
       class="title"
-      placeholder="확률론 과제 내일 오후 6시"
+      placeholder="서류 제출 내일 오후 6시"
       aria-label="할 일 입력"
       autocomplete="off"
     />
