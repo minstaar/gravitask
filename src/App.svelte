@@ -415,9 +415,13 @@
    * 붙인 이름이지 사용자가 화면에서 볼 수 있는 것이 아닙니다. 보이는 것으로만
    * 씁니다: 맨 아래, 왼쪽 동그라미, 우클릭.
    *
-   * 레인 폭이 158px이라 제목에 쓸 수 있는 것은 한글 여덟 자 남짓입니다.
-   * 그래서 뜻이 담긴 말을 앞에 둡니다 — 잘려도 앞부분만으로 무슨 카드인지
-   * 알 수 있고, 나머지는 카드에 손을 올리면 펼쳐집니다.
+   * 레인 폭이 158px이라 제목에 쓸 수 있는 것은 114px, 한글 여덟 자
+   * 남짓입니다. 대부분의 문구가 여기를 넘는데 줄이지 않았습니다 — 잘린
+   * 제목은 손을 올리게 만들고, 올리면 카드가 펼쳐지는 것까지 같이 알게
+   * 됩니다. 안내가 자기 자신을 가르치는 셈입니다.
+   *
+   * 구역을 가리키는 둘만 줄였습니다. 원래 문구가 172px과 155px이라 앞부분만
+   * 남으면 무슨 구역인지가 사라졌습니다.
    */
   async function seedIfEmpty() {
     if (store.tasks.length > 0) return;
@@ -430,16 +434,15 @@
     const zoomKey = isMac ? '⌘' : 'Ctrl';
 
     const demo: NewTask[] = [
-      // 기한이 지나면 맨 아래로 가라앉는다는 것은 처음 뭔가를 놓칠 때까지
-      // 볼 일이 없습니다. 하필 그때가 가장 당황스러운 순간이라 미리 보입니다.
-      { title: '기한 지난 일', due: now - 4 * MS_HOUR, categoryId: 'life' },
-      // 이 카드가 빨갛게 숨 쉬는 자리에 섭니다. 문구가 그 자리를 설명합니다.
-      { title: '24시간 안쪽 일', due: now + 3 * MS_HOUR, categoryId: 'study' },
+      // 아래 둘은 그 구역에 실제로 서야 문구가 참이 됩니다.
+      { title: '기한 만료 구역', due: now - 4 * MS_HOUR, categoryId: 'life' },
+      { title: '24시간 안쪽 구역', due: now + 3 * MS_HOUR, categoryId: 'study' },
       // 이 카드가 나머지를 치우는 도구입니다. 쓰이면서 자기도 사라집니다.
-      { title: '수정·삭제 우클릭', due: now + 48 * MS_HOUR, categoryId: 'study' },
-      { title: '완료는 동그라미', due: now + 144 * MS_HOUR, categoryId: 'life' },
-      { title: '캘린더 자동 추가', due: now + 288 * MS_HOUR, categoryId: 'life' },
-      { title: `크기는 ${zoomKey}+휠`, due: now + 624 * MS_HOUR, categoryId: 'study' },
+      { title: '우클릭으로 수정,삭제', due: now + 48 * MS_HOUR, categoryId: 'study' },
+      { title: '버튼을 클릭해서 완료', due: now + 144 * MS_HOUR, categoryId: 'life' },
+      { title: '설정에서 주제 편집', due: now + 216 * MS_HOUR, categoryId: 'study' },
+      { title: '외부 캘린더 연동 가능', due: now + 384 * MS_HOUR, categoryId: 'life' },
+      { title: `크기 조절 ${zoomKey}+휠`, due: now + 624 * MS_HOUR, categoryId: 'study' },
     ];
     for (const t of demo) await addTask(t);
   }
