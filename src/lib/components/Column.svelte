@@ -13,6 +13,7 @@
     budget,
     zoom = 1,
     perPage = 4,
+    settleDelay = 0,
     heldId = null,
     onToggle,
     onMenu,
@@ -27,6 +28,8 @@
     budget?: number;
     /** 배율. 끄는 거리를 화면 픽셀에서 CSS 픽셀로 되돌리는 데 씁니다 */
     zoom?: number;
+    /** 카드가 빠지는 동안 남은 카드들이 기다릴 시간(ms) */
+    settleDelay?: number;
     /** 지금 고치는 중인 카드의 id. 그 카드만 표시가 붙고 완료가 막힙니다 */
     heldId?: string | null;
     onToggle: (t: Task) => void;
@@ -386,6 +389,7 @@
                     flip={flipOf(li)}
                     room={roomOf(li)}
                     {reducedMotion}
+                    {settleDelay}
                     held={p.task.id === heldId}
                     {onToggle}
                     {onMenu}

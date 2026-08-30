@@ -69,6 +69,22 @@
 
   const UNDO_WINDOW = 7000;
 
+  /**
+   * 카드가 빠지는 동안 남은 카드들을 붙잡아 둡니다.
+   *
+   * 빠지는 애니메이션과 내려앉음이 겹치면 무엇이 사라졌는지 눈이 놓칩니다.
+   * 빠지는 쪽이 끝난 뒤에 나머지가 움직이면 순서가 읽힙니다.
+   */
+  let settleDelay = $state(0);
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function holdSettle() {
+    if (reducedMotion) return;
+    settleDelay = theme.motion.completeMs;
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => (settleDelay = 0), theme.motion.completeMs);
+  }
+
   function flash(title: string, kind: 'complete' | 'delete') {
     toast = { title, kind };
     clearTimeout(toastTimer);
@@ -76,6 +92,7 @@
   }
 
   function onComplete(task: Task) {
+    holdSettle();
     void completeTask(task);
     flash(task.title, 'complete');
   }
@@ -107,6 +124,7 @@
     menu = null;
     // 지우는 항목을 고치던 중이었다면 그 상태도 함께 놓아 줍니다.
     if (editTarget?.id === task.id) editTarget = null;
+    holdSettle();
     void removeTask(task);
     flash(task.title, 'delete');
   }
@@ -564,6 +582,7 @@
       budget={columnBudget}
       zoom={view.zoom}
       perPage={view.perPage}
+      {settleDelay}
       heldId={editTarget?.id ?? null}
       onToggle={onComplete}
       onMenu={(task, x, y) => (menu = { task, x, y })}

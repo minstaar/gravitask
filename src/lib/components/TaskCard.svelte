@@ -15,6 +15,7 @@
     flip = false,
     room = 300,
     reducedMotion = false,
+    settleDelay = 0,
     held = false,
     onToggle,
     onMenu,
@@ -29,6 +30,17 @@
     /** 펼칠 수 있는 최대 폭. 패널 밖으로 나가면 창이 잘라 버립니다 */
     room?: number;
     reducedMotion?: boolean;
+    /**
+     * 자리를 옮기기 전에 기다릴 시간(ms).
+     *
+     * 카드 하나가 빠지면 위의 카드들이 한 칸 내려앉습니다. 그런데 빠지는
+     * 카드의 애니메이션과 그 내려앉음이 같은 순간에 시작하면, 화면에서 두
+     * 가지가 한꺼번에 움직여 무엇이 사라졌는지 눈이 놓칩니다.
+     *
+     * 빠지는 쪽을 먼저 끝내고 남는 쪽이 뒤따르면 순서가 읽힙니다 — 하나가
+     * 사라졌고, 그래서 나머지가 자리를 메웠다는 순서입니다.
+     */
+    settleDelay?: number;
     /**
      * 지금 고치는 중인 카드인가.
      *
@@ -47,8 +59,17 @@
   const y = new Spring(untrack(() => targetY), theme.motion.spring);
 
   $effect(() => {
-    if (reducedMotion) y.set(targetY, { instant: true });
-    else y.target = targetY;
+    const target = targetY;
+    if (reducedMotion) {
+      y.set(target, { instant: true });
+      return;
+    }
+    if (settleDelay <= 0) {
+      y.target = target;
+      return;
+    }
+    const timer = setTimeout(() => (y.target = target), settleDelay);
+    return () => clearTimeout(timer);
   });
 
   /**
