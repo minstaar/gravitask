@@ -554,15 +554,25 @@
         조용한 게 이 위젯의 일입니다. 이름은 그냥 이름으로 둡니다.
       -->
       <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>
-        <!-- 앱 아이콘과 같은 마크입니다. 굵은 선이 마감이고, 위의 둘은 가까운
-             것과 먼 것, 아래 흐린 것은 지나간 것 — 위젯이 하는 일 그대로입니다.
-             currentColor를 쓰므로 글자 색이 바뀌면 같이 바뀝니다. -->
+        <!--
+          앱 아이콘과 같은 구조지만 작은 크기용으로 다시 그린 것입니다.
+
+          아이콘 쪽은 투명도로 깊이를 줍니다 — 먼 것은 흐리고 지나간 것은 더
+          흐립니다. 그런데 12px에서는 막대 하나가 1.1픽셀이라, 거기에 0.38을
+          곱하면 잉크가 반 픽셀도 안 남아 사라집니다.
+
+          그래서 여기서는 전부 불투명하게 두고 막대를 두껍게 그립니다. 깊이는
+          포기하고 실루엣을 얻습니다 — 이 크기에서 사람이 읽는 것은 구조가
+          아니라 모양이고, 뜻은 아이콘 크기에서 전해지면 됩니다.
+
+          currentColor를 쓰므로 글자 색이 바뀌면 같이 바뀝니다.
+        -->
         <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
-          <g transform="translate(0 -2.25)">
-            <rect x="27" y="17" width="46" height="9.5" rx="3.4" opacity="0.72" />
-            <rect x="27" y="41" width="46" height="9.5" rx="3.4" />
-            <rect x="11" y="58" width="78" height="12" rx="6" />
-            <rect x="27" y="78" width="46" height="9.5" rx="3.4" opacity="0.38" />
+          <g transform="translate(0 1.5)">
+            <rect x="24" y="8" width="52" height="13" rx="6" />
+            <rect x="24" y="33" width="52" height="13" rx="6" />
+            <rect x="8" y="52" width="84" height="16" rx="8" />
+            <rect x="24" y="76" width="52" height="13" rx="6" />
           </g>
         </svg>
         GRAVITASK
