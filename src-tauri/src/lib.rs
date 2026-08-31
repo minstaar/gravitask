@@ -352,9 +352,27 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
         std::thread::sleep(UPDATE_INTERVAL);
     });
 
-    TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("Gravitask")
+    let tray = TrayIconBuilder::with_id("main-tray");
+
+    // macOS 메뉴 막대는 단색 템플릿 이미지를 기대합니다.
+    //
+    // 컬러 아이콘을 넣으면 시스템 아이콘들 사이에서 혼자 튀고, 메뉴 막대가
+    // 밝은 배경일 때 어두운 아이콘이 그대로 남아 안 보입니다. 템플릿으로
+    // 넘기면 macOS가 배경에 맞춰 알아서 뒤집습니다.
+    //
+    // Windows 트레이에는 그 개념이 없고, 단색 검정 아이콘을 넣으면 어두운
+    // 작업표시줄에서 사라집니다. 그래서 갈라 씁니다.
+    #[cfg(target_os = "macos")]
+    let tray = tray
+        .icon(tauri::image::Image::from_bytes(include_bytes!(
+            "../icons/tray-template.png"
+        ))?)
+        .icon_as_template(true);
+
+    #[cfg(not(target_os = "macos"))]
+    let tray = tray.icon(app.default_window_icon().unwrap().clone());
+
+    tray.tooltip("Gravitask")
         .menu(&menu)
         .on_menu_event(move |app, event| {
             let Some(window) = app.get_webview_window("main") else {

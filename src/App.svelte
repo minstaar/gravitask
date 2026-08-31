@@ -546,13 +546,26 @@
         사이에 있는 색이었습니다 — 절대 급함을 뜻하면 안 되는 자리가 급함의 색을
         입고 있었던 셈입니다.
 
-        두 낱말로 읽히는 것은 지킵니다. 이름 자체가 gravity와 task를 붙인 말이라
-        그 이음매가 보여야 뜻이 섭니다. 색 대신 밝기로 나눕니다 — 이 앱이 다른
-        곳에서 위계를 표현하는 방식과 같고, 글꼴이 플랫폼마다 달라져도 굵기와
-        달리 똑같이 보입니다.
+        나누지도 않습니다. 한때 두 낱말이 읽히도록 밝기를 갈랐지만, 이름의
+        말장난은 README 첫 줄이 설명하지 로고가 하는 일이 아닙니다. 12px 끌기
+        막대의 라벨은 아무도 들여다보지 않고, 거기서의 미묘한 차이는 의도가
+        아니라 렌더링 사고처럼 보입니다.
+
+        조용한 게 이 위젯의 일입니다. 이름은 그냥 이름으로 둡니다.
       -->
       <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>
-        GRAVI<span style:color={theme.surface.textMuted}>TASK</span>
+        <!-- 앱 아이콘과 같은 마크입니다. 굵은 선이 마감이고, 위의 둘은 가까운
+             것과 먼 것, 아래 흐린 것은 지나간 것 — 위젯이 하는 일 그대로입니다.
+             currentColor를 쓰므로 글자 색이 바뀌면 같이 바뀝니다. -->
+        <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+          <g transform="translate(0 -2.25)">
+            <rect x="27" y="17" width="46" height="9.5" rx="3.4" opacity="0.72" />
+            <rect x="27" y="41" width="46" height="9.5" rx="3.4" />
+            <rect x="11" y="58" width="78" height="12" rx="6" />
+            <rect x="27" y="78" width="46" height="9.5" rx="3.4" opacity="0.38" />
+          </g>
+        </svg>
+        GRAVITASK
       </span>
 
       <!--
@@ -836,11 +849,24 @@
   }
 
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.16em;
     user-select: none;
+  }
+
+  /* 끌기는 부모가 받습니다. 마크가 그 위에 얹혀 있으면 여기를 잡았을 때
+     창이 안 움직이므로, 마우스를 통과시킵니다. */
+  .mark {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    fill: currentColor;
+    pointer-events: none;
   }
 
 

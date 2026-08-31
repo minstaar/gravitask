@@ -41,3 +41,7 @@ src-tauri/gen
 *.njsproj
 *.sln
 *.sw?
+
+# tauri icon이 만드는 모바일 아이콘. 이 앱은 데스크탑만 냅니다.
+src-tauri/icons/android/
+src-tauri/icons/ios/
