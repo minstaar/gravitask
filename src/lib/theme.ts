@@ -82,7 +82,6 @@ export interface Theme {
     laneGap: number;
     /** 시간 눈금이 들어가는 왼쪽 여백 */
     gutter: number;
-    gutterRight: number;
   };
   /** 글자 크기(px). 위젯은 흘끗 보는 물건이라 본문이 작으면 제 역할을 못 합니다 */
   type: {
