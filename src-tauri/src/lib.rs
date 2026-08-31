@@ -459,6 +459,18 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 
+            // 캘린더 주소를 둘 파일의 자리를 알려 줍니다.
+            //
+            // macOS에서만 씁니다. 키체인이 앱을 코드 서명으로 식별하는데 우리는
+            // ad-hoc 서명이라 업데이트할 때마다 낯선 앱이 되고, 그때마다 로그인
+            // 암호를 묻습니다. Windows 자격 증명 저장소에는 그 문제가 없어서
+            // 그대로 둡니다. 자세한 사정은 ics.rs 머리말에 있습니다.
+            #[cfg(target_os = "macos")]
+            match app.path().app_data_dir() {
+                Ok(dir) => ics::set_data_dir(dir),
+                Err(err) => log::error!("앱 데이터 폴더를 찾지 못했습니다: {err}"),
+            }
+
             // Dock에 아이콘을 두지 않습니다. skipTaskbar의 macOS 짝입니다.
             //
             // Info.plist의 LSUIElement가 같은 일을 하고, 그쪽이 더 낫습니다 —

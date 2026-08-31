@@ -61,35 +61,37 @@ const ALL_DAY_MIN: u32 = 59;
 const MAX_UPCOMING_PER_SERIES: usize = 2;
 
 /// 캘린더 주소를 두는 곳.
+/// 캘린더 주소를 어디에 두는가.
 ///
 /// 비공개 ICS 주소는 사실상 비밀번호입니다 — 그 주소를 아는 사람은 캘린더
-/// 전체를 읽습니다. 앱 데이터 파일에 두면 백업이나 클라우드 동기화로 그 파일이
-/// 나가는 순간 함께 샙니다. OS 자격 증명 저장소는 그러라고 있는 자리입니다.
+/// 전체를 읽습니다. 그래서 원래는 양쪽 다 OS 자격 증명 저장소에 넣었습니다.
 ///
-/// 주소는 여기서만 꺼내 씁니다. 프런트로 돌려주지 않습니다 — 웹뷰에 두지 않는
-/// 것이 애초에 Rust에서 가져오기로 한 이유의 절반이었습니다.
+/// macOS에서는 그 선택이 값을 요구했습니다. 키체인은 항목마다 어떤 앱이 읽어도
+/// 되는지를 **코드 서명으로** 기억하는데, 우리는 ad-hoc 서명이라 빌드마다
+/// 서명이 달라집니다. 업데이트한 앱은 macOS 눈에 남의 비밀을 달라는 낯선
+/// 프로그램이고, 그래서 로그인 암호를 묻습니다. 클릭으로 넘길 수 있는 종류가
+/// 아니라 Developer ID 인증서로만 풀립니다.
+///
+/// Windows 자격 증명 저장소에는 이 문제가 없습니다. 앱을 서명으로 식별하지
+/// 않아서 다시 묻는 일이 없습니다.
+///
+/// 그래서 갈랐습니다 — 값을 치르지 않는 쪽은 그대로 두고, 치르는 쪽만 파일로
+/// 내립니다. 플랫폼마다 다른 것이 어색해 보이지만 어색한 것은 상황이지 이
+/// 선택이 아닙니다. 같은 값을 치르지 않는데 같은 선택을 할 이유가 없습니다.
+///
+/// **macOS에서 잃는 것을 분명히 적어 둡니다:** 같은 사용자로 도는 다른 앱이
+/// 이 파일을 물어보지 않고 읽을 수 있습니다. `~/Library/Application Support`는
+/// TCC 보호 밖입니다. 새는 것은 캘린더를 **읽는** 권한 하나이고 계정이나 쓰기
+/// 권한은 아니지만, 키체인이 막아 주던 것을 내려놓은 것은 맞습니다.
+///
+/// 바뀌지 않는 것: 주소는 여기서만 꺼내 씁니다. 프런트로 돌려주지 않습니다 —
+/// 웹뷰에 두지 않는 것이 애초에 Rust에서 가져오기로 한 이유의 절반이었습니다.
 const KEYRING_SERVICE: &str = "gravitask-calendar";
-
-fn entry(handle: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, handle).map_err(|e| format!("자격 증명 저장소를 열지 못했습니다: {e}"))
-}
 
 /// 한 번 꺼낸 주소는 이 프로세스가 사는 동안 들고 있습니다.
 ///
-/// 캘린더를 20분마다 받아 오는데, 그때마다 자격 증명 저장소를 다시 열고
-/// 있었습니다. 주소는 그 사이에 바뀌지 않으므로 전부 같은 답을 받으려고 여는
-/// 것입니다.
-///
-/// macOS에서는 이게 그냥 낭비가 아니라 고장으로 보입니다. 키체인은 항목마다
-/// 어떤 앱이 읽어도 되는지를 코드 서명으로 기억하는데, 우리는 ad-hoc 서명이라
-/// 서명이 빌드마다 바뀝니다. 그래서 macOS가 매번 낯선 앱으로 보고 암호를
-/// 묻습니다 — 하루 종일 켜 두면 70번쯤 묻습니다.
-///
-/// 캐시가 서명 문제를 고치지는 않습니다. 그건 Developer ID 인증서로만
-/// 풀립니다. 다만 묻는 횟수를 실행당 한 번으로 줄입니다.
-///
-/// 웹뷰와의 거리는 그대로입니다. 주소는 여전히 Rust 안에만 있고 프런트로
-/// 나가지 않습니다 — 애초에 여기서 읽기로 한 이유가 그것이었습니다.
+/// 캘린더를 20분마다 받아 오는데 주소는 그 사이에 바뀌지 않습니다. 저장소를
+/// 그때마다 다시 여는 것은 전부 같은 답을 받으려고 여는 것입니다.
 fn cache() -> &'static Mutex<HashMap<String, String>> {
     static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -97,9 +99,7 @@ fn cache() -> &'static Mutex<HashMap<String, String>> {
 
 pub fn save_url(handle: &str, url: &str) -> Result<(), String> {
     let url = url.trim();
-    entry(handle)?
-        .set_password(url)
-        .map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))?;
+    store::save(handle, url)?;
     // 저장이 성공한 뒤에만 캐시에 넣습니다. 실패한 값을 들고 있으면 다음
     // 받아오기가 저장되지도 않은 주소를 쓰게 됩니다.
     cache()
@@ -113,9 +113,7 @@ pub fn read_url(handle: &str) -> Result<String, String> {
     if let Some(url) = cache().lock().unwrap().get(handle) {
         return Ok(url.clone());
     }
-    let url = entry(handle)?
-        .get_password()
-        .map_err(|_| "저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())?;
+    let url = store::read(handle)?;
     cache()
         .lock()
         .unwrap()
@@ -127,13 +125,133 @@ pub fn forget_url(handle: &str) -> Result<(), String> {
     // 캐시를 먼저 비웁니다. 저장소에서 지우는 데 실패하더라도 이 실행에서는
     // 더 쓰지 않는 것이 맞습니다 — 사용자는 지우라고 했습니다.
     cache().lock().unwrap().remove(handle);
-    match entry(handle)?.delete_credential() {
-        Ok(()) => Ok(()),
-        // 이미 없으면 지운 것과 같습니다
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("주소를 지우지 못했습니다: {e}")),
+    store::forget(handle)
+}
+
+#[cfg(windows)]
+mod store {
+    use super::KEYRING_SERVICE;
+
+    fn entry(handle: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(KEYRING_SERVICE, handle)
+            .map_err(|e| format!("자격 증명 저장소를 열지 못했습니다: {e}"))
+    }
+
+    pub fn save(handle: &str, url: &str) -> Result<(), String> {
+        entry(handle)?
+            .set_password(url)
+            .map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))
+    }
+
+    pub fn read(handle: &str) -> Result<String, String> {
+        entry(handle)?
+            .get_password()
+            .map_err(|_| "저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())
+    }
+
+    pub fn forget(handle: &str) -> Result<(), String> {
+        match entry(handle)?.delete_credential() {
+            Ok(()) => Ok(()),
+            // 이미 없으면 지운 것과 같습니다
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("주소를 지우지 못했습니다: {e}")),
+        }
     }
 }
+
+#[cfg(target_os = "macos")]
+mod store {
+    use std::collections::HashMap;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    use super::KEYRING_SERVICE;
+
+    static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+    /// 앱 데이터 폴더를 알려 줍니다. setup에서 한 번 부릅니다.
+    pub fn set_data_dir(dir: PathBuf) {
+        let _ = DATA_DIR.set(dir);
+    }
+
+    fn file() -> Result<PathBuf, String> {
+        let dir = DATA_DIR
+            .get()
+            .ok_or_else(|| "앱 데이터 폴더를 아직 모릅니다".to_string())?;
+        fs::create_dir_all(dir).map_err(|e| format!("폴더를 만들지 못했습니다: {e}"))?;
+        Ok(dir.join("calendar-urls.json"))
+    }
+
+    fn load() -> HashMap<String, String> {
+        file()
+            .ok()
+            .and_then(|p| fs::read_to_string(p).ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    fn write(map: &HashMap<String, String>) -> Result<(), String> {
+        let path = file()?;
+        let text = serde_json::to_string_pretty(map)
+            .map_err(|e| format!("주소를 적지 못했습니다: {e}"))?;
+        fs::write(&path, text).map_err(|e| format!("주소를 저장하지 못했습니다: {e}"))?;
+        // 다른 사용자 계정에서는 읽지 못하게 합니다. 같은 계정으로 도는 앱은
+        // 여전히 읽을 수 있고, 그것이 키체인을 내려놓으며 치른 값입니다.
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        Ok(())
+    }
+
+    pub fn save(handle: &str, url: &str) -> Result<(), String> {
+        let mut map = load();
+        map.insert(handle.to_string(), url.to_string());
+        write(&map)
+    }
+
+    /// 파일에 없으면 예전에 키체인에 넣어 둔 것을 한 번 옮겨 옵니다.
+    ///
+    /// 이 옮김이 마지막 키체인 접근입니다 — 여기서 암호를 한 번 묻고, 그 뒤로는
+    /// 두 번 다시 묻지 않습니다. 사용자가 그 창을 취소하면 옮기지 못하지만,
+    /// 그때는 캘린더를 다시 등록하면 됩니다. 창을 다시 띄우느니 다시 등록하는
+    /// 편이 낫습니다.
+    pub fn read(handle: &str) -> Result<String, String> {
+        if let Some(url) = load().get(handle) {
+            return Ok(url.clone());
+        }
+
+        let moved = keyring::Entry::new(KEYRING_SERVICE, handle)
+            .ok()
+            .and_then(|e| e.get_password().ok());
+
+        if let Some(url) = moved {
+            log::info!("캘린더 주소를 키체인에서 파일로 옮깁니다");
+            save(handle, &url)?;
+            // 옮겼으니 키체인 쪽은 지웁니다. 남겨 두면 다음 판이 또 물어봅니다.
+            if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, handle) {
+                let _ = entry.delete_credential();
+            }
+            return Ok(url);
+        }
+
+        Err("저장된 주소를 찾을 수 없습니다. 캘린더를 다시 등록해 주세요.".to_string())
+    }
+
+    pub fn forget(handle: &str) -> Result<(), String> {
+        let mut map = load();
+        if map.remove(handle).is_some() {
+            write(&map)?;
+        }
+        // 아직 옮겨오지 않은 예전 항목이 남아 있을 수 있습니다.
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, handle) {
+            let _ = entry.delete_credential();
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub use store::set_data_dir;
 
 pub async fn fetch(url: &str) -> Result<String, String> {
     // webcal://은 https로 바꿔 씁니다. 애플이 공유 링크를 그 꼴로 줍니다.
