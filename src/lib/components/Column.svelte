@@ -433,8 +433,11 @@
   /* 폭은 내용(header·column)에만 주고 바깥은 감쌉니다. .widget에 직접 주면
      border-box라 패딩과 테두리가 그 안에 포함돼 레인이 삐져나갑니다. */
   .widget {
+    /* 활주로 배경과 선들이 이 값만큼 밖으로 나가야 상자 끝까지 닿습니다.
+       숫자를 두 곳에 적으면 언젠가 한쪽만 고치게 되므로 값으로 뺍니다. */
+    --widget-pad-x: 14px;
     border-radius: 14px;
-    padding: 12px 14px 12px;
+    padding: 12px var(--widget-pad-x) 12px;
     background: var(--surface);
     border: 1px solid var(--surface-border);
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
@@ -563,7 +566,19 @@
    */
   /* .card는 다른 컴포넌트가 그리므로 :global로 지목해야 합니다. 안 그러면
      Svelte가 쓰이지 않는 선택자로 보고 통째로 지워, 고친 것이 사라집니다. */
-  .lane:has(:global(.card:hover)) {
+  /**
+   * 경계선과 마감선은 카드 위에 그립니다(z-index 6). 그래야 대기 구역 첫
+   * 카드가 점선을 덮어 선이 끊기지 않습니다.
+   *
+   * 그런데 그 때문에 고치는 중인 카드의 흰 테두리도 선에 가려집니다. 24시간
+   * 경계나 마감선에 걸친 카드를 수정하면 테두리가 그 자리에서 사라져,
+   * 무엇을 고치는 중인지 알려주는 유일한 표시가 끊깁니다.
+   *
+   * 붙잡힌 동안에는 레인을 선 위로 올립니다. 그 레인 폭만큼 점선이 끊기지만,
+   * 그건 고치는 동안만이고 표시가 사라지는 것보다 훨씬 낫습니다.
+   */
+  .lane:has(:global(.card:hover)),
+  .lane:has(:global(.card.held)) {
     z-index: 40;
   }
 
@@ -621,15 +636,25 @@
 
   /* 활주로용. 레인을 가로질러 한 줄로 이어져야 주제 사이 틈이 선처럼 보이지 않습니다 */
   .fade.wide {
-    left: var(--gutter);
-    right: 0;
+    left: calc(var(--gutter) - 10px);
+    right: calc(-1 * var(--widget-pad-x));
     top: auto;
   }
 
+  /**
+   * 활주로 배경은 상자 오른쪽 끝까지 닿아야 합니다.
+   *
+   * 기둥 안에만 두면 상자 패딩 14px 앞에서 멈춥니다. 왼쪽은 축 라벨이 그
+   * 빈자리를 설명하지만 오른쪽에는 아무것도 없어서, 붉은 띠가 그냥 잘린
+   * 것처럼 보이고 그 옆의 어두운 띠가 눈에 걸립니다.
+   *
+   * 왼쪽 끝은 경계선·마감선과 같은 자리에서 시작합니다. 셋이 한 자리에서
+   * 시작해야 활주로가 하나의 구역으로 읽힙니다.
+   */
   .runway {
     position: absolute;
-    left: var(--gutter);
-    right: 0;
+    left: calc(var(--gutter) - 10px);
+    right: calc(-1 * var(--widget-pad-x));
     background: linear-gradient(to top, rgba(196, 43, 74, 0.1), rgba(196, 43, 74, 0.015));
   }
 
@@ -683,7 +708,7 @@
   .boundary {
     position: absolute;
     left: calc(var(--gutter) - 10px);
-    right: 0;
+    right: calc(-1 * var(--widget-pad-x));
     border-top: 1px dashed var(--boundary);
     z-index: 6;
   }
@@ -691,7 +716,7 @@
   .deadline {
     position: absolute;
     left: calc(var(--gutter) - 10px);
-    right: 0;
+    right: calc(-1 * var(--widget-pad-x));
     height: 1px;
     background: linear-gradient(90deg, var(--deadline), transparent);
     z-index: 6;
