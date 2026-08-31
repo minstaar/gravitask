@@ -417,7 +417,33 @@ fn build_tray(app: &tauri::App, state: Arc<WidgetState>) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // 두 번 뜨지 않게 합니다.
+    //
+    // macOS는 OS가 알아서 막습니다 — 이미 도는 앱을 다시 열면 새 프로세스가
+    // 아니라 Reopen 신호가 오고, 그건 아래 run 콜백이 받습니다. Windows에는
+    // 그런 것이 없어서 바로가기를 누를 때마다 프로세스가 하나씩 늘어납니다.
+    //
+    // 보기 흉한 정도가 아니라 데이터를 잃는 문제입니다. 두 프로세스가 같은
+    // 파일에 할 일을 쓰는데 서로의 존재를 모릅니다. 한쪽이 읽은 뒤 다른 쪽이
+    // 쓰고, 먼저 읽은 쪽이 나중에 쓰면 그 사이에 적은 것이 사라집니다.
+    //
+    // 이 플러그인은 가장 먼저 걸어야 합니다.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // 새로 뜨는 대신 이미 있는 위젯을 꺼냅니다. macOS의 Reopen과 같은
+        // 동작이라, 두 플랫폼에서 '다시 실행'이 같은 뜻이 됩니다.
+        if let Some(state) = app.try_state::<Arc<WidgetState>>() {
+            state.hidden.store(false, Ordering::Relaxed);
+        }
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         // 창 위치를 기억합니다. 크기는 내용에 맞춰 우리가 직접 정하므로
         // POSITION만 저장합니다. SIZE까지 맡기면 복원된 크기와 우리가 계산한
         // 크기가 매번 다퉈 창이 들썩입니다.
