@@ -538,10 +538,21 @@
        단계에 반영되므로 마감선·축선 같은 1px 선이 축소에서 사라지지 않습니다. -->
   <div class="panel" bind:this={panel} style:zoom={view.zoom}>
     <div class="dragbar" data-tauri-drag-region={inTauri ? true : undefined}>
+      <!--
+        로고에 색을 쓰지 않습니다.
+        이 위젯에서 색은 마감 하나를 뜻합니다. 주제에 색을 안 준 이유가 그것인데
+        ("이 색이 급하다는 뜻인지 주제라는 뜻인지 헷갈립니다") 로고에도 같은 말이
+        적용됩니다. 게다가 예전 로고의 주황(#E8913C)은 긴급도 램프의 '곧'과 '임박'
+        사이에 있는 색이었습니다 — 절대 급함을 뜻하면 안 되는 자리가 급함의 색을
+        입고 있었던 셈입니다.
+
+        두 낱말로 읽히는 것은 지킵니다. 이름 자체가 gravity와 task를 붙인 말이라
+        그 이음매가 보여야 뜻이 섭니다. 색 대신 밝기로 나눕니다 — 이 앱이 다른
+        곳에서 위계를 표현하는 방식과 같고, 글꼴이 플랫폼마다 달라져도 굵기와
+        달리 똑같이 보입니다.
+      -->
       <span class="brand" data-tauri-drag-region={inTauri ? true : undefined}>
-        <span style:color={theme.surface.brandWarm}>GRAVI</span><span
-          style:color={theme.surface.brandCool}>TASK</span
-        >
+        GRAVI<span style:color={theme.surface.textMuted}>TASK</span>
       </span>
 
       <!--
