@@ -84,12 +84,15 @@
    */
   const laneW = $derived.by(() => {
     const n = Math.max(1, visible.length);
-    const available = L.maxWidth - L.gutter - (n - 1) * L.laneGap;
+    const available = L.maxWidth - L.gutter - L.gutterRight - (n - 1) * L.laneGap;
     return Math.max(L.laneMin, Math.min(L.laneWidth, Math.floor(available / n)));
   });
 
   const width = $derived(
-    L.gutter + visible.length * laneW + Math.max(0, visible.length - 1) * L.laneGap
+    L.gutter +
+      L.gutterRight +
+      visible.length * laneW +
+      Math.max(0, visible.length - 1) * L.laneGap
   );
 
   /**
@@ -298,6 +301,7 @@
   style:--fs-meta="{theme.type.meta}px"
   style:--fs-axis="{theme.type.axis}px"
   style:--gutter="{L.gutter}px"
+  style:--gutter-right="{L.gutterRight}px"
   style:--lane-w="{laneW}px"
   style:--lane-gap="{L.laneGap}px"
   style:--content-w="{width}px"
@@ -622,14 +626,14 @@
   /* 활주로용. 레인을 가로질러 한 줄로 이어져야 주제 사이 틈이 선처럼 보이지 않습니다 */
   .fade.wide {
     left: var(--gutter);
-    right: 0;
+    right: var(--gutter-right);
     top: auto;
   }
 
   .runway {
     position: absolute;
     left: var(--gutter);
-    right: 0;
+    right: var(--gutter-right);
     background: linear-gradient(to top, rgba(196, 43, 74, 0.1), rgba(196, 43, 74, 0.015));
   }
 
@@ -683,7 +687,7 @@
   .boundary {
     position: absolute;
     left: calc(var(--gutter) - 10px);
-    right: 0;
+    right: var(--gutter-right);
     border-top: 1px dashed var(--boundary);
     z-index: 6;
   }
@@ -691,7 +695,7 @@
   .deadline {
     position: absolute;
     left: calc(var(--gutter) - 10px);
-    right: 0;
+    right: var(--gutter-right);
     height: 1px;
     background: linear-gradient(90deg, var(--deadline), transparent);
     z-index: 6;

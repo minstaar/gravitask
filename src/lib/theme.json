@@ -20,7 +20,8 @@
     "laneMin": 92,
     "maxWidth": 660,
     "laneGap": 10,
-    "gutter": 36
+    "gutter": 36,
+    "gutterRight": 20
   },
 
   "type": {

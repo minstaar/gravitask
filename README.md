@@ -5,8 +5,7 @@ Windows와 macOS에서 돕니다.
 
 할 일은 마감을 향해 떨어집니다. 이름은 거기서 왔습니다.
 
-<!-- 스크린샷을 docs/screenshot.png 로 넣고 아래 줄의 주석을 벗기세요 -->
-<!-- ![Gravitask](docs/screenshot.png) -->
+![Gravitask](docs/screenshot.png)
 
 ```
         업무            생활
