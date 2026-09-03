@@ -199,6 +199,35 @@
   const runwayRange = $derived(Math.max(0, axis.runwayContent - axis.runwayHeight));
   const runwayPan = $derived(Math.min(pan[RUNWAY] ?? 0, runwayRange));
 
+  /**
+   * 손이 올라온 카드를 구역 안으로 끌어들입니다.
+   *
+   * 구역은 창이라서 끌어 놓은 자리에 따라 카드가 위나 아래로 반쯤 잘립니다.
+   * 가만히 있을 때는 그게 맞습니다 — 창 밖은 안 보이는 게 창의 뜻입니다.
+   * 그런데 읽으려고 손을 올린 카드까지 반만 보이면 창이 아니라 고장입니다.
+   *
+   * clip-path로는 한 장만 빼줄 수 없습니다. 그래서 자르는 쪽이 아니라 카드
+   * 쪽을 옮깁니다 — 잘린 만큼만 밀어 넣으면 전부 보입니다.
+   *
+   * 커서를 놓칠 걱정은 없습니다. 카드는 잘려 나간 쪽의 반대로만, 잘린 만큼만
+   * 움직입니다. 커서는 보이던 부분 위에 있었고 그 부분은 움직인 뒤에도
+   * 카드 안이라, 손이 미끄러져 원위치로 튕기는 일이 생기지 않습니다.
+   *
+   * 활주로에서도 같이 합니다. 높이가 곧 시각인 구역이라 옮기는 것이 마음에
+   * 걸리지만, 손을 올린 동안만이고 떼면 스프링이 제 시각으로 되돌립니다.
+   * 잠깐 어긋나는 것과 아예 못 읽는 것 중에서는 앞이 낫습니다.
+   */
+  let hoverId = $state<string | null>(null);
+
+  const pulledInto = (y: number, laneId: string, laneIndex: number, zone: Zone) => {
+    const offset = panOf(laneId, laneIndex, zone);
+    const lo = offset;
+    const hi = offset + viewportOf(zone) - L.cardHeight;
+    // 구역이 카드 한 장보다 낮으면 어디에 둬도 잘립니다. 그때는 손대지 않습니다.
+    if (hi < lo) return y;
+    return Math.max(lo, Math.min(hi, y));
+  };
+
   /* ---------- 끌기 ---------- */
 
   let dragging = $state<string | null>(null);
@@ -389,7 +418,9 @@
                   <TaskCard
                     task={p.task}
                     visual={p.visual}
-                    targetY={p.y}
+                    targetY={p.task.id === hoverId
+                      ? pulledInto(p.y, lane.category.id, li, zone)
+                      : p.y}
                     remaining={p.remaining}
                     deadline={p.deadline}
                     flip={flipOf(li)}
@@ -397,6 +428,7 @@
                     {reducedMotion}
                     {settleDelay}
                     held={p.task.id === heldId}
+                    onHover={(id) => (hoverId = id)}
                     {onToggle}
                     {onMenu}
                   />

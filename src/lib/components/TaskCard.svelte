@@ -3,7 +3,7 @@
   import { Spring } from 'svelte/motion';
   import { cubicIn } from 'svelte/easing';
   import { theme } from '../theme';
-  import { describeRepeat } from '../repeat';
+  import { describeCycle, describeRepeat } from '../repeat';
   import { stripePattern, withAlpha, type Visual } from '../urgency';
   import type { Task } from '../types';
 
@@ -20,6 +20,7 @@
     held = false,
     onToggle,
     onMenu,
+    onHover,
   }: {
     task: Task;
     visual: Visual;
@@ -52,6 +53,14 @@
     held?: boolean;
     onToggle: (t: Task) => void;
     onMenu: (t: Task, x: number, y: number) => void;
+    /**
+     * 손이 올라오고 내려간 것을 알립니다.
+     *
+     * 펼침 자체는 CSS :hover가 하지만, 구역 밖으로 잘린 카드를 안으로
+     * 끌어들이는 일은 구역의 창 크기와 끌어 놓은 자리를 아는 쪽만 할 수
+     * 있습니다. 그건 Column입니다.
+     */
+    onHover?: (id: string | null) => void;
   } = $props();
 
   // 카드가 경계를 넘어 활주로로 떨어지는 순간이 이 위젯의 핵심 알림입니다.
@@ -131,6 +140,8 @@
     e.preventDefault();
     onMenu(task, e.clientX, e.clientY);
   }}
+  onmouseenter={() => onHover?.(task.id)}
+  onmouseleave={() => onHover?.(null)}
   data-zone={visual.zone}
   data-target={targetY}
   style:--room="{room}px"
@@ -169,7 +180,7 @@
       -->
       {#if task.repeat}<span class="cycle" title={describeRepeat(task.repeat, task.due)}>↻</span>{/if}
       {remaining}<span class="when">{deadline}</span>
-      {#if task.repeat}<span class="when rule">{describeRepeat(task.repeat, task.due)}</span>{/if}
+      {#if task.repeat}<span class="when rule">{describeCycle(task.repeat, task.due)}</span>{/if}
     </span>
   </span>
 </div>
@@ -277,6 +288,19 @@
   .due {
     display: flex;
     flex-wrap: nowrap;
+    /**
+     * 글자도 줄을 바꾸지 않습니다.
+     *
+     * flex-wrap:nowrap은 flex 줄이 접히는 것만 막습니다. 항목 **안쪽**의
+     * 글자는 그대로 접혀서, 자리가 4px 모자라자 익명 항목이 눌리며
+     * "3d 23h"가 "3d"와 "23h" 두 줄로 쪼개졌습니다. 남은 시간·마감 시각·
+     * 반복이 저마다 제멋대로 접히니 한 줄이 통째로 어그러져 보였습니다.
+     *
+     * nowrap을 여기 걸면 상속되어 조각 전부가 한 줄에 섭니다. 넘치면 아래
+     * overflow가 자릅니다 — 잘린 꼬리는 정보를 조금 잃을 뿐이지만, 접힌
+     * 글자는 카드를 세로로 밀어 올려 마감선을 밟습니다.
+     */
+    white-space: nowrap;
     overflow: hidden;
     column-gap: 4px;
     font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;

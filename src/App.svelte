@@ -518,10 +518,47 @@
    * 실제로 주제 편집을 열 때 높이가 변하는데도 창이 따라오지 않았습니다.
    * 크기 변화 자체를 신호로 삼으면 원인이 무엇이든 놓치지 않습니다.
    */
+  /**
+   * 한 프레임에 한 번만, 그리고 겹치지 않게 맞춥니다.
+   *
+   * 마감·반복 줄이 미끄러지는 200ms 동안 패널 높이가 매 프레임 바뀌므로
+   * 관찰자도 매 프레임 웁니다. 울 때마다 새 프레임을 잡으면 한 프레임에 여러
+   * 번 맞추게 되고, fitWindow는 창 위치를 읽고 쓰는 비동기 작업이라 겹쳐
+   * 돌면 앞선 것이 읽어 둔 위치가 이미 옛것이 됩니다 — 그러면 창이 조금씩
+   * 어긋나게 밀립니다.
+   *
+   * 프레임당 한 번으로 묶고, 도는 중에 또 부탁이 오면 끝난 뒤 한 번 더
+   * 돕니다. 마지막 부탁이 반드시 반영되면서 겹치지는 않습니다.
+   */
+  let fitQueued = false;
+  let fitting = false;
+  let fitAgain = false;
+
+  async function requestFit() {
+    if (fitting) {
+      fitAgain = true;
+      return;
+    }
+    fitting = true;
+    try {
+      do {
+        fitAgain = false;
+        await fitWindow();
+      } while (fitAgain);
+    } finally {
+      fitting = false;
+    }
+  }
+
   $effect(() => {
     if (!inTauri || !panel) return;
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => void fitWindow());
+      if (fitQueued) return;
+      fitQueued = true;
+      requestAnimationFrame(() => {
+        fitQueued = false;
+        void requestFit();
+      });
     });
     observer.observe(panel);
     return () => observer.disconnect();
@@ -577,16 +614,42 @@
 
 
   /**
-   * 마감·반복 줄을 접을 때.
+   * 마감·반복 줄을 펼쳐야 하는가.
    *
-   * 손을 대지 않았고, 설정도 안 열려 있고, 고치는 중인 카드도 없을 때입니다.
+   * 손을 댔거나, 설정이 열려 있거나, 고치는 중인 카드가 있을 때입니다.
    * 뒤의 둘을 빼면 안 됩니다 — 설정을 열어 둔 채 마우스를 치우거나, 카드를
    * 고치다 다른 창을 잠깐 보면, 방금 정한 마감과 반복이 눈앞에서 사라집니다.
    *
    * 전역 단축키(Ctrl+Alt+G)는 따로 다룰 것이 없습니다. 그게 입력칸에 커서를
    * 두므로 focused가 켜지고, 그러면 여기가 저절로 펼쳐집니다.
    */
-  const compact = $derived(!interacting && !editing && editTarget === null);
+  const wantsRows = $derived(interacting || editing || editTarget !== null);
+
+  /** 펼치고 접는 데 걸리는 시간. 창이 그만큼 따라 움직입니다 */
+  const REVEAL_MS = 200;
+
+  /**
+   * 접는 데는 뜸을 들입니다.
+   *
+   * 펼치는 것은 즉시입니다 — 손을 올렸는데 기다리게 하면 굼떠 보입니다.
+   * 접는 쪽만 늦춥니다. 위젯 위를 스쳐 지나가거나, 입력칸에서 칩으로 손을
+   * 옮기다 잠깐 바깥을 지나는 일이 흔한데, 그때마다 줄이 닫혔다 열리면
+   * 창까지 따라 움직여서 어지럽습니다.
+   */
+  const HIDE_DELAY_MS = 320;
+
+  let showRows = $state(false);
+
+  $effect(() => {
+    if (wantsRows) {
+      showRows = true;
+      return;
+    }
+    const timer = setTimeout(() => (showRows = false), HIDE_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
+
+  const compact = $derived(!showRows);
 
   const sorted = $derived([...store.categories].sort((a, b) => a.order - b.order));
 </script>
@@ -676,6 +739,7 @@
       onEdit={commitEdit}
       onCancelEdit={() => (editTarget = null)}
       {compact}
+      revealMs={reducedMotion ? 0 : REVEAL_MS}
     />
 
 

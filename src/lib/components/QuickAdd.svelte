@@ -1,4 +1,6 @@
 ﻿<script lang="ts">
+  import { slide } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
   import { theme } from '../theme';
   import { parseTaskInput } from '../parseInput';
   import {
@@ -25,6 +27,7 @@
     onEdit,
     onCancelEdit,
     compact = false,
+    revealMs = 0,
     openSheet = $bindable(null),
   }: {
     categories: Category[];
@@ -56,6 +59,8 @@
      * 사실을 알리는 유일한 표시라, 사라지면 적는 법을 알 방법이 없습니다.
      */
     compact?: boolean;
+    /** 접히고 펴지는 데 쓸 시간(ms). 0이면 즉시 */
+    revealMs?: number;
     /**
      * 지금 열려 있는 팝오버. 셋 중 하나만 열리므로 한 칸이면 충분합니다.
      *
@@ -404,7 +409,15 @@
 
   <!-- 날짜·시각도 직접 그립니다. 네이티브 입력은 달력과 목록 모양을 OS가
        정해서 위젯과 따로 놀고, 지우기 버튼처럼 우리가 원치 않는 조작도 끼어듭니다. -->
+  <!--
+    두 줄을 한 덩어리로 묶어 함께 미끄러집니다.
+
+    따로 접으면 마감이 먼저 사라지고 반복이 뒤따라 계단처럼 보입니다. 둘은
+    "이 할 일이 언제 찾아오는가"라는 한 가지를 나눠 말하는 것이라, 나타나고
+    사라지는 것도 한 번이어야 합니다.
+  -->
   {#if !compact}
+  <div class="reveal" transition:slide={{ duration: revealMs, easing: cubicOut }}>
   <div class="row due">
     <span class="lbl">마감</span>
     {#if editing}
@@ -665,6 +678,7 @@
       </span>
     {/if}
   </div>
+  </div>
   {/if}
 </form>
 
@@ -687,6 +701,14 @@
    * 그제서야 마감 줄의 flex-wrap도 일을 합니다 — 아무것도 폭을 붙들지 않으면
    * 줄은 접히는 대신 옆으로 자라기만 합니다.
    */
+  /* 감싼 상자가 줄 사이 간격까지 안고 미끄러져야 합니다. form의 gap은 상자
+     바깥에 붙으므로, 안쪽 두 줄의 간격은 여기서 따로 냅니다. */
+  .reveal {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
   form {
     display: flex;
     flex-direction: column;
