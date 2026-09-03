@@ -3,6 +3,7 @@
  * (Node 24의 TypeScript 직접 실행을 씁니다 — 빌드 단계 없음)
  */
 import { parseTaskInput } from './parseInput.ts';
+import { alignToRepeat, describeCycle } from './repeat.ts';
 
 // 기준 시각을 고정합니다: 2026-08-14 (금) 10:00
 const NOW = new Date(2026, 7, 14, 10, 0, 0, 0);
@@ -65,6 +66,76 @@ for (const [input, wantTitle, wantDue] of cases) {
     console.log(`  FAIL ${input}`);
     console.log(`         title: got "${r.title}"  want "${wantTitle}"`);
     console.log(`         due:   got ${gotDue}  want ${wantDue}`);
+  }
+}
+
+/*
+ * 반복.
+ *
+ * 파서가 정하는 것은 '얼마 간격인가'뿐입니다. '언제부터인가'는 표시를 뗀
+ * 나머지 문장을 날짜 규칙이 그대로 읽어서 정합니다 — "매주 월요일"에서 '매주'만
+ * 떼면 "월요일"이 남고, 그건 이미 알아듣던 문장입니다.
+ */
+const repeatCases: [input: string, title: string, due: string, cycle: string][] = [
+  ['매주 월요일 알고리즘 과제', '알고리즘 과제', '2026-08-17 23:59', '매주 월'],
+  ['매일 운동 오후 9시', '운동', '2026-08-14 21:00', '매일'],
+  ['격주 금요일 연구미팅', '연구미팅', '2026-08-14 23:59', '격주 금'],
+  ['매월 1일 월세', '월세', '2026-09-01 23:59', '매월 1일'],
+  ['3일마다 화분 물 주기', '화분 물 주기', 'null', '3일마다'],
+  ['2주마다 대청소 토요일', '대청소', '2026-08-15 23:59', '격주 토'],
+  // 날짜를 안 적으면 첫 회차가 없습니다. 그래도 규칙은 살아서, 입력칸의
+  // 마감 칩이 기본값(오늘 끝)을 들고 있으므로 거기서 시작합니다.
+  ['매주 스터디', '스터디', 'null', '매주'],
+];
+
+for (const [input, wantTitle, wantDue, wantCycle] of repeatCases) {
+  const r = parseTaskInput(input, NOW);
+  // 요일·날짜는 첫 회차에서 따라오므로, 규칙을 읽을 때도 그 값을 넘겨 줍니다.
+  // 첫 회차가 없으면 넘길 것도 없습니다 — 그때는 입력칸의 마감 칩이 들고 있는
+  // 기본값이 그 자리를 채웁니다.
+  const gotCycle = r.repeat ? describeCycle(r.repeat, r.due?.getTime()) : 'null';
+  const gotDue = fmt(r.due);
+  if (r.title === wantTitle && gotDue === wantDue && gotCycle === wantCycle) {
+    pass++;
+    console.log(`  ok   ${input.padEnd(24)} → ${gotCycle}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${input}`);
+    console.log(`         title:  got "${r.title}"  want "${wantTitle}"`);
+    console.log(`         due:    got ${gotDue}  want ${wantDue}`);
+    console.log(`         반복:   got ${gotCycle}  want ${wantCycle}`);
+  }
+}
+
+// 반복이 아닌 문장에서 규칙이 튀어나오면 안 됩니다. "2주 뒤"는 한 번뿐인 일이고
+// "1주일 뒤"도 마찬가지입니다 — 여기서 '마다'를 요구하는 이유입니다.
+for (const input of ['논문 읽기 2주 뒤', '스터디 1주일 뒤', '제출 20일', '보고서 오늘 23:59']) {
+  const r = parseTaskInput(input, NOW);
+  if (r.repeat === null) {
+    pass++;
+    console.log(`  ok   반복 아님: ${input}`);
+  } else {
+    fail++;
+    console.log(`  FAIL 반복이 아닌데 규칙을 만들었다: ${input} → ${describeCycle(r.repeat)}`);
+  }
+}
+
+// "평일"을 금요일 10시에 적으면 첫 회차가 토요일로 잡힙니다. 규칙이 평일이라
+// 말하는데 첫 카드가 주말인 것은 그 자리에서 틀린 값이라, 입력칸이 첫 회차를
+// 규칙 위로 옮깁니다.
+{
+  const r = parseTaskInput('평일 스탠드업 오전 10시', NOW);
+  const raw = r.due!.getTime();
+  const aligned = alignToRepeat(raw, r.repeat!);
+  const ok = fmt(new Date(raw)) === '2026-08-15 10:00' && fmt(new Date(aligned)) === '2026-08-17 10:00';
+  if (ok) {
+    pass++;
+    console.log(`  ok   평일 첫 회차가 토요일에서 월요일로 옮겨진다`);
+  } else {
+    fail++;
+    console.log(`  FAIL 평일 첫 회차`);
+    console.log(`         맞추기 전: ${fmt(new Date(raw))}  (want 2026-08-15 10:00)`);
+    console.log(`         맞춘 뒤:   ${fmt(new Date(aligned))}  (want 2026-08-17 10:00)`);
   }
 }
 

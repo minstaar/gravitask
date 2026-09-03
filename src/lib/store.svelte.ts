@@ -9,6 +9,7 @@ import {
   writeJson,
 } from './persist';
 import { maxTopicsPerPage } from './layout';
+import { rollRepeat } from './repeat';
 import { theme } from './theme';
 import { IcsSource } from './sources/IcsSource';
 import { LocalSource } from './sources/LocalSource';
@@ -195,25 +196,48 @@ export const store = $state({
 });
 
 export interface UndoEntry {
+  /**
+   * 이 되돌리기 항목 자체의 번호.
+   *
+   * 할 일 id로는 항목을 가릴 수 없습니다. 반복은 한 줄이 여러 회차를 지나므로
+   * 같은 id로 스택에 여러 번 쌓이고, 지운 것을 되살렸다 다시 지워도 그렇게
+   * 됩니다. id로 찾으면 스택 맨 아래 것을 지우고 방금 되돌린 것은 그대로 남아,
+   * 두 번째 Ctrl+Z가 같은 자리에서 헛돕니다.
+   */
+  key: number;
   id: string;
   title: string;
   /** 되돌리는 방법이 소스마다 달라서 어디서 왔는지 함께 들고 다닙니다 */
   sourceId: string;
   occurrenceKey: string;
   /**
-   * 무엇을 되돌리는가. 완료와 삭제는 같은 Ctrl+Z를 쓰지만 되돌리는 길이
-   * 다릅니다 — 완료는 기록에서 꺼내 오고, 삭제는 기록에 없습니다.
+   * 무엇을 되돌리는가. 셋 다 같은 Ctrl+Z를 쓰지만 되돌리는 길이 다릅니다.
+   *
+   * complete  — 기록에서 꺼내 살아 있는 목록으로 되돌립니다.
+   * delete    — 기록에 없습니다. 스택이 들고 있던 항목을 그대로 도로 넣습니다.
+   * occurrence — 반복의 한 회차. 할 일은 지워진 게 아니라 다음 회차로 굴러
+   *   갔으므로, 되살릴 것이 아니라 굴러간 것을 되감아야 합니다.
    */
-  kind: 'complete' | 'delete';
+  kind: 'complete' | 'delete' | 'occurrence';
   /**
-   * 지운 항목 그 자체. 삭제일 때만 있습니다.
+   * 지운 항목 또는 굴리기 직전의 모습.
    *
    * 삭제한 것을 완료 기록에 넣어 두고 거기서 꺼내는 방법도 있지만, 그러면
    * 기록이 거짓말을 하게 됩니다. 기록은 '한 일'이고 지운 것은 하지 않은
    * 일입니다. 되돌리기 스택은 어차피 이 실행 동안만 사는 값이라, 지운 항목을
    * 여기 들고 있는 편이 맞습니다.
+   *
+   * 반복에서는 '굴리기 전의 마감과 남은 횟수'를 여기 담습니다. 그 둘만 도로
+   * 넣으면 되감기가 끝납니다.
    */
   task?: Task;
+  /**
+   * 기록에 적힌 id. 반복일 때만 할 일 id와 다릅니다.
+   *
+   * 반복은 회차마다 기록이 한 줄씩 쌓이는데 살아 있는 줄은 하나뿐이라,
+   * 기록을 할 일 id로 적으면 두 번째 완료가 첫 번째 기록을 덮어씁니다.
+   */
+  archiveId?: string;
 }
 
 const UNDO_DEPTH = 10;
@@ -388,6 +412,17 @@ export async function addTask(input: NewTask): Promise<void> {
  * 만들고, 확인 절차를 넣으면 그 감각이 죽습니다. 대신 사라진 것이 어디에도
  * 없는 게 아니라 기록으로 옮겨 갔을 뿐이라서 언제든 되돌릴 수 있습니다.
  */
+/**
+ * 기록에 적을 id.
+ *
+ * 반복이 아니면 할 일 id 그대로입니다. 반복은 한 줄이 회차를 여러 번 지나므로
+ * 회차(마감 시각)를 붙여 갈라놓습니다 — 그러지 않으면 이번 주 수업을 체크하는
+ * 순간 지난주 기록이 사라집니다.
+ */
+function archiveIdOf(task: Task): string {
+  return task.repeat ? `${task.id}@${task.due}` : task.id;
+}
+
 export async function completeTask(task: Task): Promise<void> {
   const src = sourceOf(task);
   const at = Date.now();
@@ -399,12 +434,37 @@ export async function completeTask(task: Task): Promise<void> {
     // 남는데, init이 살아 있는 쪽을 남기므로 최악이 '한 번 더 체크'입니다.
     // 순서를 뒤집으면 최악이 '사라짐'입니다.
     const categoryName = store.categories.find((c) => c.id === task.categoryId)?.name ?? '';
-    await archiveTask({ ...task, completedAt: at, categoryName });
-    await src.remove?.(task.id);
-  } else {
-    // 남의 것 — 옮겨도 다음 폴링에 되살아나므로 표시만 남깁니다.
-    await markDone(occurrenceOf(task), at);
+    const rolled = task.repeat ? rollRepeat(task.due, task.repeat, at) : null;
+
+    await archiveTask({ ...task, id: archiveIdOf(task), completedAt: at, categoryName });
+
+    if (rolled) {
+      // 반복은 지우지 않고 다음 회차로 굴립니다. 같은 줄이 계속 살아 있으므로
+      // 레인에는 언제나 한 장입니다.
+      await src.update?.(task.id, { due: rolled.due, repeat: rolled.repeat });
+      // 알림은 할 일 id로 보낸 기록을 남깁니다. 굴린 뒤에도 그 기록이 남아
+      // 있으면 다음 회차는 마감이 코앞이어도 두 번 다시 울리지 않습니다.
+      await forgetTask(task.id);
+    } else {
+      await src.remove?.(task.id);
+    }
+
+    pushUndo({
+      id: task.id,
+      title: task.title,
+      sourceId: src.id,
+      occurrenceKey: occurrenceOf(task),
+      kind: task.repeat ? 'occurrence' : 'complete',
+      task: task.repeat ? task : undefined,
+      archiveId: task.repeat ? archiveIdOf(task) : undefined,
+    });
+
+    await refresh();
+    return;
   }
+
+  // 남의 것 — 옮겨도 다음 폴링에 되살아나므로 표시만 남깁니다.
+  await markDone(occurrenceOf(task), at);
 
   pushUndo({
     id: task.id,
@@ -417,8 +477,10 @@ export async function completeTask(task: Task): Promise<void> {
   await refresh();
 }
 
-function pushUndo(entry: UndoEntry): void {
-  undo.stack.push(entry);
+let undoSeq = 0;
+
+function pushUndo(entry: Omit<UndoEntry, 'key'>): void {
+  undo.stack.push({ ...entry, key: ++undoSeq });
   if (undo.stack.length > UNDO_DEPTH) undo.stack.shift();
 }
 
@@ -430,6 +492,33 @@ function pushUndo(entry: UndoEntry): void {
  * 나타납니다.
  */
 export async function undoEntry(entry: UndoEntry): Promise<boolean> {
+  /**
+   * 반복의 한 회차 — 되살리는 게 아니라 되감습니다.
+   *
+   * 완료하면 할 일이 사라지는 게 아니라 다음 회차로 굴러갑니다. 그래서
+   * 되돌리기도 기록에서 꺼내 오는 것이 아니라 굴러간 마감과 남은 횟수를 도로
+   * 넣는 일입니다. 계열의 마지막 회차였다면 줄 자체가 빠졌으니 그때는 도로
+   * 넣습니다 — insert가 원래 id를 지키므로 되살린 것이 예전 자신입니다.
+   */
+  if (entry.kind === 'occurrence') {
+    const before = entry.task;
+    if (!before) return false;
+
+    const live = store.tasks.some((t) => t.id === before.id);
+    if (live) await source.update?.(before.id, { due: before.due, repeat: before.repeat });
+    else await source.insert?.(before);
+
+    // 기록을 지우는 것은 살아 있는 쪽을 되돌린 다음입니다. 순서가 반대면 그
+    // 사이에 죽었을 때 그 회차가 양쪽 어디에도 없습니다.
+    if (entry.archiveId) await dropArchived(entry.archiveId);
+    await forgetTask(before.id);
+
+    const i = undo.stack.findIndex((e) => e.key === entry.key);
+    if (i >= 0) undo.stack.splice(i, 1);
+    await refresh();
+    return true;
+  }
+
   // 지운 것은 기록에 없습니다. 스택이 들고 있던 항목을 그대로 도로 넣습니다 —
   // insert는 add와 달리 원래 id를 지키므로, 되살린 항목이 예전 자신입니다.
   if (entry.kind === 'delete') {
@@ -437,7 +526,7 @@ export async function undoEntry(entry: UndoEntry): Promise<boolean> {
     await source.insert?.(entry.task);
     // 되살아났으니 알림도 다시 받을 수 있어야 합니다.
     await forgetTask(entry.id);
-    const i = undo.stack.findIndex((e) => e.id === entry.id);
+    const i = undo.stack.findIndex((e) => e.key === entry.key);
     if (i >= 0) undo.stack.splice(i, 1);
     await refresh();
     return true;
@@ -447,7 +536,7 @@ export async function undoEntry(entry: UndoEntry): Promise<boolean> {
   if (src && !src.writable) {
     await clearDone(entry.occurrenceKey);
     await forgetTask(entry.id);
-    const i = undo.stack.findIndex((e) => e.id === entry.id);
+    const i = undo.stack.findIndex((e) => e.key === entry.key);
     if (i >= 0) undo.stack.splice(i, 1);
     await refresh();
     return true;
@@ -499,6 +588,22 @@ export async function updateTask(
   patch: Partial<Omit<Task, 'id'>>
 ): Promise<void> {
   await source.update?.(id, patch);
+  await refresh();
+}
+
+/**
+ * 반복을 끝냅니다. 카드는 남고 규칙만 뗍니다.
+ *
+ * 끝을 정하지 않은 반복('계속')에는 반드시 나가는 문이 있어야 합니다. 횟수를
+ * 미리 아는 경우가 드물어 기본값이 '계속'인데, 그만두는 방법이 삭제뿐이면
+ * 사용자는 아직 안 한 이번 회차까지 같이 버려야 합니다.
+ *
+ * 그래서 지우지 않고 규칙만 뗍니다 — 화면에 있던 카드는 평범한 할 일 한 장이
+ * 되어 그대로 남고, 체크하면 다음 회차 없이 끝납니다.
+ */
+export async function endRepeat(task: Task): Promise<void> {
+  if (!task.repeat) return;
+  await source.update?.(task.id, { repeat: undefined });
   await refresh();
 }
 

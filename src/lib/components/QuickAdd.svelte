@@ -1,6 +1,20 @@
 ﻿<script lang="ts">
   import { theme } from '../theme';
   import { parseTaskInput } from '../parseInput';
+  import {
+    alignToRepeat,
+    clampCount,
+    COUNT_PRESETS,
+    CYCLE_PRESETS,
+    cycleIdOf,
+    describeCount,
+    describeCycle,
+    MAX_COUNT,
+    normalizeRepeat,
+    WEEKDAY_NAMES,
+    WEEKDAYS_ONLY,
+    type Repeat,
+  } from '../repeat';
   import type { Category, NewTask, Task } from '../types';
 
   let {
@@ -26,7 +40,10 @@
      * 방법이 둘이 되고, 파서가 바뀔 때마다 양쪽을 맞춰야 합니다.
      */
     editing?: Task | null;
-    onEdit: (id: string, patch: { title: string; due: number; categoryId: string }) => void;
+    onEdit: (
+      id: string,
+      patch: { title: string; due: number; categoryId: string; repeat?: Repeat }
+    ) => void;
     onCancelEdit: () => void;
     /**
      * 지금 열려 있는 팝오버. 셋 중 하나만 열리므로 한 칸이면 충분합니다.
@@ -43,6 +60,7 @@
   let listOpen = $state(false);
   let dateOpen = $state(false);
   let timeOpen = $state(false);
+  let repeatOpen = $state(false);
   /** 달력에서 넘겨 보고 있는 달. null이면 마감일이 속한 달 */
   let monthAnchor = $state<Date | null>(null);
 
@@ -73,11 +91,90 @@
     return new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 23, mm ?? 59, 0, 0);
   });
 
+  /* ---- 반복 ---- */
+
+  /**
+   * 사용자가 직접 정한 반복. null이면 파싱 결과를 씁니다.
+   *
+   * 날짜·시각과 같은 구조입니다 — 파서가 알아들은 값이 기본이고, 손대는 순간
+   * 그쪽이 이깁니다. 여기서는 '반복 없음'도 사용자가 고를 수 있는 값이라
+   * null 하나로 '안 골랐음'과 '없음'을 같이 나타낼 수 없어, 한 겹을 더 씁니다.
+   */
+  let overrideRepeat = $state<{ value: Repeat | null } | null>(null);
+
+  const repeat = $derived(overrideRepeat ? overrideRepeat.value : parsed.repeat);
+
+  /**
+   * 첫 회차.
+   *
+   * 요일을 직접 골랐는데 마감일이 그 요일이 아니면, 규칙이 말하는 것과 화면에
+   * 뜰 카드가 어긋납니다. 첫 회차를 규칙 위로 옮기고 그 값을 칩에 그대로
+   * 보여 줍니다 — 조용히 옮기면 저장한 뒤에야 다른 날짜를 발견하게 됩니다.
+   */
+  const firstDue = $derived(repeat ? new Date(alignToRepeat(dueAt.getTime(), repeat)) : dueAt);
+
+  /** 저장할 규칙. 비어 있던 자리(요일·날짜)를 첫 회차에서 채워 둡니다 */
+  const repeatToSave = $derived(repeat ? normalizeRepeat(repeat, firstDue.getTime()) : undefined);
+
+  const cycleId = $derived(cycleIdOf(repeat));
+  const weekly = $derived(repeat?.unit === 'week');
+  /** 지금 켜져 있는 요일들. 고른 적이 없으면 첫 회차의 요일 하나 */
+  const chosenWeekdays = $derived(repeat?.weekdays ?? [firstDue.getDay()]);
+
+  const repeatLabel = $derived(
+    repeat ? `${describeCycle(repeat, firstDue.getTime())} · ${describeCount(repeat.left)}` : '반복 없음'
+  );
+
+  /** 직접 적는 횟수. 비어 있으면 프리셋 중 하나를 쓰고 있다는 뜻입니다 */
+  let countText = $state('');
+
+  function setRepeat(next: Repeat | null) {
+    overrideRepeat = { value: next };
+  }
+
+  function pickCycle(id: string) {
+    const preset = CYCLE_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    // 주기를 바꿔도 횟수는 유지합니다. 바꾸는 것은 '얼마 간격인가'뿐이고,
+    // '몇 번인가'는 따로 고른 값이라 같이 지워지면 다시 골라야 합니다.
+    setRepeat({ ...preset.make(dueAt.getTime()), left: repeat?.left ?? null });
+  }
+
+  function toggleWeekday(w: number) {
+    if (!repeat || repeat.unit !== 'week') return;
+    const on = new Set(chosenWeekdays);
+    if (on.has(w)) on.delete(w);
+    else on.add(w);
+    // 전부 끄면 규칙이 아무 날도 가리키지 않습니다. 마지막 하나는 못 끕니다 —
+    // 반복을 그만두려면 '안 함'이라는 분명한 자리가 따로 있습니다.
+    if (on.size === 0) return;
+    setRepeat({ ...repeat, weekdays: [...on].sort((a, b) => a - b) });
+  }
+
+  function pickWeekdaysOnly() {
+    if (!repeat) return;
+    setRepeat({ ...repeat, unit: 'week', every: 1, weekdays: [...WEEKDAYS_ONLY] });
+  }
+
+  function pickCount(left: number | null) {
+    if (!repeat) return;
+    countText = '';
+    setRepeat({ ...repeat, left });
+  }
+
+  function typeCount(raw: string) {
+    countText = raw;
+    if (!repeat) return;
+    const n = Number(raw);
+    if (!raw.trim() || !Number.isFinite(n)) return;
+    setRepeat({ ...repeat, left: clampCount(n) });
+  }
+
   /* ---- 직접 그린 달력 ---- */
 
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
   const shownMonth = $derived(
-    monthAnchor ?? new Date(dueAt.getFullYear(), dueAt.getMonth(), 1)
+    monthAnchor ?? new Date(firstDue.getFullYear(), firstDue.getMonth(), 1)
   );
 
   /** 달력 한 판. 앞뒤 빈칸을 null로 채워 요일이 어긋나지 않게 합니다 */
@@ -109,8 +206,10 @@
     monthAnchor = new Date(shownMonth.getFullYear(), shownMonth.getMonth() + n, 1);
   }
 
+  // 반복이 첫 회차를 옮겼으면 옮긴 날짜를 보여 줍니다. 실제로 생길 카드와
+  // 다른 날짜를 칩에 적어 두면, 저장한 뒤에야 어긋난 것을 알게 됩니다.
   const dateLabel = $derived(
-    `${dueAt.getMonth() + 1}월 ${dueAt.getDate()}일 (${WD[dueAt.getDay()]})`
+    `${firstDue.getMonth() + 1}월 ${firstDue.getDate()}일 (${WD[firstDue.getDay()]})`
   );
 
   /* ---- 시각 고르기 ---- */
@@ -162,12 +261,15 @@
     listOpen = false;
     dateOpen = false;
     timeOpen = false;
+    repeatOpen = false;
   }
 
   function reset() {
     text = '';
     overrideDate = '';
     overrideTime = '';
+    overrideRepeat = null;
+    countText = '';
     monthAnchor = null;
     closeAll();
   }
@@ -192,6 +294,11 @@
       // 떼어냅니다. 멀쩡하던 제목이 조용히 잘려 나가는 것입니다.
       overrideDate = toDate(d);
       overrideTime = toTime(d);
+      // 마감과 같은 이유로 override 자리에 싣습니다. 파싱 결과를 쓰면 '매주
+      // 회의' 같은 제목을 되돌려 넣는 순간 파서가 '매주'를 규칙으로 도로
+      // 집어가고 제목에서 떼어냅니다.
+      overrideRepeat = { value: t.repeat ?? null };
+      countText = '';
       categoryId = t.categoryId;
       closeAll();
       input?.focus();
@@ -207,9 +314,14 @@
     if (editing) {
       // 수정 모드에서 제목은 적힌 글자 그대로입니다. 마감은 아래 칩이 이미
       // 들고 있으므로 제목에서 다시 뽑을 이유가 없습니다.
-      onEdit(editing.id, { title: text.trim(), due: dueAt.getTime(), categoryId });
+      onEdit(editing.id, {
+        title: text.trim(),
+        due: firstDue.getTime(),
+        categoryId,
+        repeat: repeatToSave,
+      });
     } else {
-      onAdd({ title: parsed.title, due: dueAt.getTime(), categoryId });
+      onAdd({ title: parsed.title, due: firstDue.getTime(), categoryId, repeat: repeatToSave });
     }
     reset();
     input?.focus();
@@ -419,9 +531,118 @@
       {/if}
     </div>
 
-    {#if parsed.dateText || parsed.timeText}
+    <!--
+      반복은 마감 옆에 둡니다. 다른 자리에 두면 "언제까지"와 "얼마 간격으로"가
+      서로 다른 종류의 값처럼 보이는데, 실은 둘 다 이 할 일이 언제 찾아오는지를
+      말하는 한 덩어리입니다. 첫 회차가 마감 칩이고 그다음이 이 칩입니다.
+    -->
+    <div class="picker">
+      <button
+        type="button"
+        class="chip"
+        class:on={repeat !== null}
+        aria-haspopup="dialog"
+        aria-expanded={repeatOpen}
+        onclick={() => {
+          repeatOpen = !repeatOpen;
+          dateOpen = false;
+          timeOpen = false;
+          listOpen = false;
+        }}
+      >
+        {#if repeat}<span class="cycle" aria-hidden="true">↻</span>{/if}
+        {repeatLabel}
+        <span class="caret" class:up={repeatOpen}>▾</span>
+      </button>
+
+      {#if repeatOpen}
+        <div class="sheet rep" role="dialog" aria-label="반복 고르기" bind:this={openSheet}>
+          <div class="quick">
+            <!-- '안 함'이 첫 자리입니다. 나가는 문은 들어온 자리와 같은 줄에
+                 있어야 찾지 않고 누를 수 있습니다. -->
+            <button
+              type="button"
+              class:on={repeat === null}
+              onclick={() => {
+                setRepeat(null);
+                repeatOpen = false;
+              }}>안 함</button
+            >
+            {#each CYCLE_PRESETS as p (p.id)}
+              <button type="button" class:on={cycleId === p.id} onclick={() => pickCycle(p.id)}>
+                {p.label}
+              </button>
+            {/each}
+          </div>
+
+          {#if weekly}
+            <!-- 주간 반복에서만 요일이 뜻을 가집니다. 매일·매월에 요일 칸을
+                 띄워 두면 눌러도 아무 일이 없는 버튼이 일곱 개 생깁니다. -->
+            <div class="wdays" role="group" aria-label="반복 요일">
+              {#each WEEKDAY_NAMES as name, w (w)}
+                <button
+                  type="button"
+                  class="wd-toggle"
+                  class:on={chosenWeekdays.includes(w)}
+                  aria-pressed={chosenWeekdays.includes(w)}
+                  onclick={() => toggleWeekday(w)}
+                >
+                  {name}
+                </button>
+              {/each}
+            </div>
+            {#if cycleId !== 'weekday'}
+              <button type="button" class="wd-all" onclick={pickWeekdaysOnly}>월~금 전부</button>
+            {/if}
+          {/if}
+
+          {#if repeat}
+            <div class="count">
+              <span class="colhead">횟수</span>
+              <div class="quick">
+                {#each COUNT_PRESETS as n (n ?? 'forever')}
+                  <button
+                    type="button"
+                    class:on={repeat.left === n && countText === ''}
+                    onclick={() => pickCount(n)}
+                  >
+                    {n === null ? '계속' : `${n}회`}
+                  </button>
+                {/each}
+              </div>
+              <label class="own">
+                직접
+                <input
+                  type="number"
+                  min="1"
+                  max={MAX_COUNT}
+                  inputmode="numeric"
+                  placeholder="—"
+                  value={countText}
+                  oninput={(e) => typeCount(e.currentTarget.value)}
+                />
+                회
+              </label>
+              <!-- 기본이 '계속'이라, 그만두는 방법이 여기밖에 없으면 안 됩니다.
+                   카드를 우클릭해도 끝낼 수 있다는 것을 여기서 알려 둡니다. -->
+              <p class="note">
+                {#if repeat.left === null}
+                  끝을 정하지 않았습니다. 카드를 우클릭해 언제든 끝낼 수 있습니다.
+                {:else}
+                  {repeat.left}번째 회차를 끝내면 반복도 함께 끝납니다.
+                {/if}
+              </p>
+            </div>
+          {/if}
+
+          <button type="button" class="done" onclick={() => (repeatOpen = false)}>확인</button>
+        </div>
+      {/if}
+    </div>
+
+    {#if parsed.dateText || parsed.timeText || parsed.repeatText}
       <span class="hint">
-        “{[parsed.dateText, parsed.timeText].filter(Boolean).join(' ')}”에서 읽음
+        “{[parsed.repeatText, parsed.dateText, parsed.timeText].filter(Boolean).join(' ')}”에서 읽음
       </span>
     {/if}
   </div>
@@ -434,10 +655,24 @@
 />
 
 <style>
+  /**
+   * 폭은 위젯이 정합니다. 입력칸은 거기 맞춰 늘어날 뿐입니다.
+   *
+   * 설정 패널이 쓰는 것과 같은 수법입니다. 패널이 inline-flex라 가장 넓은
+   * 자식을 따라가는데, 마감 줄에 칩이 셋(날짜·시각·반복)이 되면서 수정 중에는
+   * '취소'까지 붙어 한 줄의 max-content가 377px이 됩니다. 그대로 두면 반복 칩
+   * 하나 때문에 패널이 위젯보다 47px 넓어져 두 카드의 세로선이 어긋납니다.
+   *
+   * width:0으로 폭 계산에서 빠지고 min-width:100%로 정해진 폭에 맞춥니다.
+   * 그제서야 마감 줄의 flex-wrap도 일을 합니다 — 아무것도 폭을 붙들지 않으면
+   * 줄은 접히는 대신 옆으로 자라기만 합니다.
+   */
   form {
     display: flex;
     flex-direction: column;
     gap: 7px;
+    width: 0;
+    min-width: 100%;
   }
 
   .row {
@@ -582,8 +817,17 @@
 
   /* ---- 마감 ---- */
 
+  /**
+   * 마감 줄은 접힙니다.
+   *
+   * 칩이 셋(날짜·시각·반복)이 되면서 좁은 폭에서 한 줄에 못 담깁니다. 접지
+   * 않으면 줄이 옆으로 자라 위젯 폭을 밀어내고, 위젯이 입력줄을 따라가므로
+   * 반복 칩 하나 때문에 기둥 전체가 넓어집니다.
+   */
   .due {
     align-items: center;
+    flex-wrap: wrap;
+    row-gap: 5px;
     padding-left: 2px;
   }
 
@@ -604,6 +848,125 @@
 
   .chip:hover {
     background: rgba(255, 255, 255, 0.14);
+  }
+
+  /* 반복이 걸려 있을 때만 칩에 불이 들어옵니다. 나머지 둘(날짜·시각)은 언제나
+     값이 있지만 이것만 '없음'이 정상 상태라, 켜짐이 정보를 담습니다. */
+  .chip.on {
+    color: #cfcbff;
+    background: rgba(90, 80, 190, 0.28);
+    border-color: rgba(160, 150, 255, 0.5);
+  }
+
+  .cycle {
+    font-size: 11px;
+    line-height: 1;
+    opacity: 0.9;
+  }
+
+  /* ---- 반복 ---- */
+
+  .rep {
+    padding: 8px;
+    gap: 7px;
+    width: 232px;
+  }
+
+  /* 주기 여섯 개가 한 줄에 다 들어가면 글자가 뭉갭니다. 접히게 두고 각 칸은
+     내용만큼만 차지하게 합니다 — .quick의 flex:1은 달력의 네 칸용입니다. */
+  .rep > .quick {
+    flex-wrap: wrap;
+  }
+
+  .rep > .quick button {
+    flex: 0 1 auto;
+    padding: 4px 8px;
+  }
+
+  .quick button.on {
+    background: rgba(90, 80, 190, 0.55);
+    border-color: rgba(160, 150, 255, 0.6);
+  }
+
+  .wdays {
+    display: flex;
+    gap: 3px;
+  }
+
+  .wd-toggle {
+    flex: 1;
+    font: inherit;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 5px 0;
+    cursor: pointer;
+  }
+
+  .wd-toggle:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .wd-toggle.on {
+    color: #ededf5;
+    background: rgba(90, 80, 190, 0.55);
+    border-color: rgba(160, 150, 255, 0.6);
+  }
+
+  .wd-all {
+    font: inherit;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    background: transparent;
+    border: 1px dashed rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    padding: 4px 0;
+    cursor: pointer;
+  }
+
+  .wd-all:hover {
+    color: #ededf5;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .count {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 7px;
+  }
+
+  .own {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .own input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 4px 7px;
+    border-radius: 6px;
+  }
+
+  /* 숫자 칸의 증감 화살표를 뺍니다. 폭이 좁아 화살표가 숫자를 밀어냅니다 */
+  .own input::-webkit-outer-spin-button,
+  .own input::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  .note {
+    margin: 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.45);
   }
 
   /* ---- 달력 ---- */

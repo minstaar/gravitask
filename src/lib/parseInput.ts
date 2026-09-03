@@ -8,6 +8,8 @@
  * 살려서 돌려주고, due는 null로 두어 사용자가 보완하게 합니다.
  */
 
+import { WEEKDAYS_ONLY, type Repeat } from './repeat.ts';
+
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export interface ParsedInput {
@@ -18,6 +20,10 @@ export interface ParsedInput {
   dateText: string | null;
   /** 입력에서 시각으로 해석된 조각 */
   timeText: string | null;
+  /** 반복으로 해석된 규칙. 없으면 null */
+  repeat: Repeat | null;
+  /** 입력에서 반복으로 해석된 조각 */
+  repeatText: string | null;
 }
 
 interface Hit<T> {
@@ -215,6 +221,46 @@ function matchDate(input: string, now: Date): Hit<Date> | null {
   return null;
 }
 
+/* ---------- 반복 매칭 ---------- */
+
+/**
+ * 반복은 표시만 떼고 나머지는 날짜 규칙에 그대로 넘깁니다.
+ *
+ * "매주 월요일 알고리즘 과제"에서 '매주'만 떼면 "월요일 알고리즘 과제"가 남고,
+ * 그건 이미 위의 날짜 규칙이 처리할 줄 아는 문장입니다 — 다가오는 월요일이
+ * 첫 회차가 되고, 요일은 거기서 따라옵니다. 반복이 날짜를 따로 계산하려 들면
+ * 같은 일을 두 곳에서 하게 되고, 두 곳은 반드시 어긋납니다.
+ *
+ * 그래서 여기서 정하는 것은 '얼마 간격인가'뿐이고, '언제부터인가'는 날짜
+ * 규칙이 정합니다.
+ */
+const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'left'> }[] = [
+  // 숫자가 붙은 쪽을 먼저 봅니다. "2주마다"가 "주마다"보다 앞서야 합니다.
+  { re: /(\d+)\s*개?월\s*(?:마다|간격)/, make: (m) => ({ unit: 'month', every: +m[1] }) },
+  { re: /(\d+)\s*주(?:일)?\s*(?:마다|간격)/, make: (m) => ({ unit: 'week', every: +m[1] }) },
+  { re: /(\d+)\s*일\s*(?:마다|간격)/, make: (m) => ({ unit: 'day', every: +m[1] }) },
+  // '평일'은 매주 월~금과 같은 값이지만, 학기 중에 매일 하는 일은 대개 주말을
+  // 빼기 때문에 이 다섯 요일을 고르는 일이 잦습니다. 자주 하는 일에는 이름이
+  // 있어야 합니다.
+  {
+    re: /평일마다|평일|주중마다|주중/,
+    make: () => ({ unit: 'week', every: 1, weekdays: [...WEEKDAYS_ONLY] }),
+  },
+  { re: /격주로?|2주\s*마다/, make: () => ({ unit: 'week', every: 2 }) },
+  { re: /매주|주\s*마다|매\s*주일/, make: () => ({ unit: 'week', every: 1 }) },
+  { re: /매달|매월|달\s*마다/, make: () => ({ unit: 'month', every: 1 }) },
+  { re: /매일|날\s*마다|하루\s*마다/, make: () => ({ unit: 'day', every: 1 }) },
+];
+
+function matchRepeat(input: string): Hit<Omit<Repeat, 'left'>> | null {
+  for (const rule of REPEAT_RULES) {
+    const m = input.match(rule.re);
+    if (!m || m.index === undefined) continue;
+    return { value: rule.make(m), text: m[0], start: m.index, end: m.index + m[0].length };
+  }
+  return null;
+}
+
 /* ---------- 시각 매칭 ---------- */
 
 interface TimeOfDay {
@@ -293,8 +339,13 @@ function cleanTitle(s: string): string {
 }
 
 export function parseTaskInput(input: string, now: Date = new Date()): ParsedInput {
-  const dateHit = matchDate(input, now);
-  const afterDate = cut(input, dateHit);
+  // 반복 표시를 먼저 뗍니다. 남은 문장("월요일 …")을 날짜 규칙이 그대로
+  // 읽어 첫 회차를 정합니다.
+  const repeatHit = matchRepeat(input);
+  const afterRepeat = cut(input, repeatHit);
+
+  const dateHit = matchDate(afterRepeat, now);
+  const afterDate = cut(afterRepeat, dateHit);
   const timeHit = matchTime(afterDate);
   const rest = cut(afterDate, timeHit);
 
@@ -315,5 +366,10 @@ export function parseTaskInput(input: string, now: Date = new Date()): ParsedInp
     due,
     dateText: dateHit?.text.trim() ?? null,
     timeText: timeHit?.text.trim() ?? null,
+    // 횟수는 글로 받지 않습니다. "매주 월요일 15번"까지 알아듣게 만들 수야
+    // 있지만, 반복을 걸 때 몇 번인지 아는 경우가 드물어 대개 안 적습니다.
+    // 그래서 기본은 '계속'이고, 끝은 칩에서 고르거나 나중에 끝냅니다.
+    repeat: repeatHit ? { ...repeatHit.value, left: null } : null,
+    repeatText: repeatHit?.text.trim() ?? null,
   };
 }

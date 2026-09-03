@@ -20,6 +20,7 @@
     y,
     onEdit,
     onDelete,
+    onEndRepeat,
     onClose,
   }: {
     task: Task;
@@ -27,18 +28,29 @@
     y: number;
     onEdit: (t: Task) => void;
     onDelete: (t: Task) => void;
+    /** 반복을 끝냅니다. 카드는 남고 규칙만 떨어집니다 */
+    onEndRepeat: (t: Task) => void;
     onClose: () => void;
   } = $props();
 
   /** 구독한 캘린더에서 온 항목은 우리가 고칠 수도 지울 수도 없습니다 */
   const readOnly = $derived(task.sourceId !== undefined);
 
+  /**
+   * 반복은 여기서 끝냅니다.
+   *
+   * 기본이 '계속'이라 나가는 문이 반드시 있어야 하는데, 입력칸을 열어 칩을
+   * 찾아 '안 함'을 고르는 길뿐이면 세 걸음입니다. 그만두겠다는 결정은 대개
+   * 카드를 보다가 하므로, 카드 위에서 한 번에 닿아야 합니다.
+   */
+  const repeating = $derived(!readOnly && task.repeat !== undefined);
+
   let menu: HTMLDivElement | undefined = $state();
 
   /** 화면 밖으로 나가면 안 보입니다. 커서 옆에 붙이되 가장자리에서 접습니다 */
   const style = $derived.by(() => {
     const w = 168;
-    const h = readOnly ? 74 : 76;
+    const h = readOnly ? 74 : repeating ? 106 : 76;
     const left = Math.max(4, Math.min(x, window.innerWidth - w - 4));
     const top = Math.max(4, Math.min(y, window.innerHeight - h - 4));
     return `left:${left}px; top:${top}px; width:${w}px;`;
@@ -79,6 +91,11 @@
     <!-- 확인을 받지 않습니다. 완료와 같은 자리에서 같은 Ctrl+Z로 돌아옵니다 —
          지운 것을 되살리는 방법이 이미 손에 익은 그 동작이어야 합니다. -->
     <button role="menuitem" onclick={() => onDelete(task)}>삭제</button>
+    {#if repeating}
+      <!-- 지우기와 다릅니다. 아직 안 한 이번 회차는 그대로 남고, 다음 회차만
+           오지 않습니다. 그래서 '반복'을 끝낸다고 적습니다 — '할 일'이 아니라. -->
+      <button role="menuitem" onclick={() => onEndRepeat(task)}>반복 끝내기</button>
+    {/if}
   {/if}
 </div>
 

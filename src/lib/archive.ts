@@ -70,5 +70,8 @@ export function toTask(entry: ArchivedTask): Task {
     categoryId: entry.categoryId,
     createdAt: entry.createdAt,
     completedAt: null,
+    // 반복 규칙은 따라와야 합니다. 기록에서 되살린 할 일이 반복을 잃으면,
+    // 되돌리기가 한 회차를 되살리는 대신 계열 전체를 끊어 버립니다.
+    repeat: entry.repeat,
   };
 }

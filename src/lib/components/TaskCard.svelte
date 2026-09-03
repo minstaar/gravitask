@@ -3,6 +3,7 @@
   import { Spring } from 'svelte/motion';
   import { cubicIn } from 'svelte/easing';
   import { theme } from '../theme';
+  import { describeRepeat } from '../repeat';
   import { stripePattern, withAlpha, type Visual } from '../urgency';
   import type { Task } from '../types';
 
@@ -157,7 +158,19 @@
     <span class="title" style:font-weight={500 + Math.round(visual.urgency * 2) * 100}>
       {task.title}
     </span>
-    <span class="due">{remaining}<span class="when">{deadline}</span></span>
+    <span class="due">
+      <!--
+        반복은 글자가 아니라 기호로 답니다.
+
+        카드에 남은 자리가 없습니다 — 제목과 남은 시간이 이미 폭을 다 쓰고,
+        "매주 월" 같은 말을 늘 붙여 두면 좁은 레인에서 남은 시간을 밀어냅니다.
+        평소에는 이 할 일이 다시 온다는 사실만 알면 충분하고, 얼마 간격인지는
+        손을 올렸을 때 마감 시각과 함께 나옵니다.
+      -->
+      {#if task.repeat}<span class="cycle" title={describeRepeat(task.repeat, task.due)}>↻</span>{/if}
+      {remaining}<span class="when">{deadline}</span>
+      {#if task.repeat}<span class="when rule">{describeRepeat(task.repeat, task.due)}</span>{/if}
+    </span>
   </span>
 </div>
 
@@ -287,6 +300,14 @@
     display: none;
   }
 
+  /* 반복 기호는 늘 보입니다. 남은 시간 앞에 두어 "이 시각이 이번 회차"라는
+     것을 먼저 말하게 합니다. */
+  .cycle {
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 10px;
+    line-height: 1;
+  }
+
   /**
    * 펼치면 마감 시각이 남은 시간 옆에 붙습니다.
    *
@@ -308,6 +329,12 @@
   /* 한 줄에 붙으면 둘이 한 덩어리로 읽힙니다. 가운뎃점이 그걸 나눕니다. */
   .card:hover .when::before {
     content: '· ';
+  }
+
+  /* 규칙은 마감 시각 다음입니다. 순서가 곧 중요도라, 이번 회차가 언제인지가
+     먼저고 다음이 언제 또 오는지가 나중입니다. */
+  .card:hover .when.rule {
+    color: rgba(255, 255, 255, 0.5);
   }
 
   /**

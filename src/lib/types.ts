@@ -1,4 +1,6 @@
-﻿/**
+﻿import type { Repeat } from './repeat';
+
+/**
  * 핵심 도메인 타입.
  *
  * 설계 노트 — Task는 '점'(마감 시각 하나)입니다.
@@ -12,6 +14,15 @@ export interface Task {
   title: string;
   /** 마감 시각 (epoch ms) */
   due: number;
+
+  /**
+   * 반복 규칙. 없으면 한 번 하고 끝나는 일입니다.
+   *
+   * 회차를 미리 만들어 두지 않습니다. 이 할 일 한 줄이 계열 전체이고, 완료할
+   * 때마다 due가 다음 회차로 굴러갑니다 — 자세한 사정은 repeat.ts에 있습니다.
+   * 그래서 화면의 카드 한 장은 언제나 '다음 회차'입니다.
+   */
+  repeat?: Repeat;
   categoryId: string;
   /** 생성 시각 (epoch ms). 연소 막대 등 '전체 대비 남은 비율' 계산에 씀 */
   createdAt: number;

@@ -8,6 +8,7 @@
     addCategory,
     addTask,
     calendars,
+    endRepeat,
     completeTask,
     init,
     moveCategory,
@@ -37,6 +38,7 @@
   import { runNotifications } from './lib/notify';
   import { installUpdate, onUpdateAvailable } from './lib/system';
   import { theme } from './lib/theme';
+  import type { Repeat } from './lib/repeat';
   import type { NewTask, Task } from './lib/types';
 
   // 창 테두리를 없앴기 때문에 앱 안에서 끌 수 있는 영역을 직접 제공해야 합니다.
@@ -129,9 +131,24 @@
     flash(task.title, 'delete');
   }
 
-  function commitEdit(id: string, patch: { title: string; due: number; categoryId: string }) {
+  function commitEdit(
+    id: string,
+    patch: { title: string; due: number; categoryId: string; repeat?: Repeat }
+  ) {
     void updateTask(id, patch);
     editTarget = null;
+  }
+
+  /**
+   * 반복만 뗍니다. 카드는 그대로 남습니다.
+   *
+   * 되돌리기 팝업을 띄우지 않습니다. 완료·삭제와 달리 눈앞에서 사라지는 것이
+   * 없어서 팝업이 알려 줄 것이 없고, 되돌리려면 그 카드를 다시 우클릭해
+   * 수정에서 반복을 걸면 됩니다 — 방금 한 일이 화면에 그대로 있으니까요.
+   */
+  function onEndRepeat(task: Task) {
+    menu = null;
+    void endRepeat(task);
   }
 
   /**
@@ -683,6 +700,7 @@
     y={menu.y}
     onEdit={startEdit}
     onDelete={onDelete}
+    {onEndRepeat}
     onClose={() => (menu = null)}
   />
 {/if}
