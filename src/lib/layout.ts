@@ -193,6 +193,41 @@ export function maxTopicsPerPage(t: Theme = theme): number {
   return Math.max(1, Math.floor((L.maxWidth - L.gutter + L.laneGap) / (L.laneMin + L.laneGap)));
 }
 
+export interface LaneMetrics {
+  /** 레인 하나의 폭 */
+  laneW: number;
+  /** 머리줄과 기둥이 차지하는 폭. 위젯 상자가 이 값을 따라갑니다 */
+  width: number;
+}
+
+/**
+ * 레인 폭과 기둥 폭.
+ *
+ * 폭에는 상한과 하한이 둘 다 있습니다. 상한(maxWidth)이 주제가 늘 때 위젯이
+ * 화면을 잠식하는 것을 막고, 하한(minWidth)이 주제가 줄 때 위젯이 제 구실을
+ * 못 할 만큼 좁아지는 것을 막습니다. 예전에는 상한만 있어서, 주제가 하나면
+ * 기둥이 194px까지 쪼그라들었습니다.
+ *
+ * 남는 폭은 레인들이 나눠 갖습니다. 하한만큼 상자를 넓혀 두고 레인은 선호
+ * 폭에 두면 오른쪽에 쓰지 않는 자리가 남는데, 그 빈자리에는 아무 뜻이
+ * 없습니다 — 레인이 넓어지면 적어도 제목이 더 들어갑니다.
+ *
+ * 순서가 중요합니다. 하한을 채우는 것보다 상한을 지키는 것이 먼저고,
+ * laneMin은 그 둘보다도 먼저입니다 — 이보다 좁으면 제목이 거의 안 남습니다.
+ */
+export function laneMetrics(count: number, t: Theme = theme): LaneMetrics {
+  const L = t.layout;
+  const n = Math.max(1, count);
+  const gaps = (n - 1) * L.laneGap;
+  const room = L.maxWidth - L.gutter - gaps;
+  const fill = (L.minWidth - L.gutter - gaps) / n;
+  const laneW = Math.max(
+    L.laneMin,
+    Math.min(Math.max(L.laneWidth, fill), Math.floor(room / n))
+  );
+  return { laneW, width: Math.max(L.minWidth, L.gutter + n * laneW + gaps) };
+}
+
 export function computeAxis(
   tasks: Task[],
   categories: Category[],

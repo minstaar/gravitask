@@ -1,6 +1,6 @@
 <script lang="ts">
   import { theme } from '../theme';
-  import { computeAxis } from '../layout';
+  import { computeAxis, laneMetrics } from '../layout';
   import type { Category, Task } from '../types';
   import { hoursUntil, type Zone } from '../urgency';
   import TaskCard from './TaskCard.svelte';
@@ -76,21 +76,15 @@
 
 
   /**
-   * 레인 폭은 주제가 늘면 줄어듭니다.
+   * 레인 폭은 주제가 늘면 줄고, 줄면 늘어납니다.
    *
    * 선호 폭을 고정해두면 주제 수에 폭이 선형으로 붙어 학기 중 6과목이면
-   * 화면 절반을 먹습니다. 상한을 두고 그 안에서 나눠 쓰되, 제목이 거의 남지
-   * 않는 하한 아래로는 줄이지 않습니다. 좁아진 제목은 호버로 펼쳐 봅니다.
+   * 화면 절반을 먹습니다. 반대로 상한만 두면 주제가 하나일 때 기둥이
+   * 입력줄보다 좁아집니다. 양쪽을 다 붙드는 계산은 layout에 있습니다.
    */
-  const laneW = $derived.by(() => {
-    const n = Math.max(1, visible.length);
-    const available = L.maxWidth - L.gutter - (n - 1) * L.laneGap;
-    return Math.max(L.laneMin, Math.min(L.laneWidth, Math.floor(available / n)));
-  });
-
-  const width = $derived(
-    L.gutter + visible.length * laneW + Math.max(0, visible.length - 1) * L.laneGap
-  );
+  const metrics = $derived(laneMetrics(visible.length));
+  const laneW = $derived(metrics.laneW);
+  const width = $derived(metrics.width);
 
   /**
    * 호버로 펼칠 방향과 한도.
@@ -110,7 +104,19 @@
   const zoneLabel = (zone: string) =>
     zone === 'overdue' ? '기한 지남' : zone === 'runway' ? '24시간 안쪽' : '예정';
   const roomRight = (i: number) => width - L.gutter - laneOffset(i);
-  const roomLeft = (i: number) => laneOffset(i) + laneW;
+  /**
+   * 왼쪽으로는 눈금 여백까지 갈 수 있습니다.
+   *
+   * 예전에는 레인들이 시작하는 자리에서 멈췄습니다. 옆 레인이 있을 때는
+   * 어차피 남는 폭이 넉넉해서 티가 안 났는데, 주제가 하나면 이 값이 곧
+   * 레인 폭이라 카드가 한 뼘도 못 펼쳐집니다.
+   *
+   * 눈금 여백은 축 표기(12h·DUE)의 자리입니다. 펼치는 동안만 그 위를 덮는데,
+   * 제목이 레인보다 길어서 펼치는 순간에는 잘린 제목을 읽는 쪽이 급합니다.
+   * 그리고 카드 폭에는 CSS 쪽에 300px 상한이 따로 있어, 이 여유가 실제로
+   * 쓰이는 건 그 사이에 걸린 제목뿐입니다.
+   */
+  const roomLeft = (i: number) => laneOffset(i) + laneW + L.gutter;
   const flipOf = (i: number) => roomRight(i) < roomLeft(i);
   const roomOf = (i: number) => Math.max(roomRight(i), roomLeft(i));
 

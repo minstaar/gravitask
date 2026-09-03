@@ -7,7 +7,7 @@
  *  2. 그래도 아무것도 잃지 않는다 — 예산 밖으로 밀려난 카드는 접히는 게
  *     아니라 구역 안에서 끌어 볼 수 있어야 합니다(content > height).
  */
-import { computeAxis } from './layout.ts';
+import { computeAxis, laneMetrics, maxTopicsPerPage } from './layout.ts';
 import { theme } from './theme.ts';
 import { MS_HOUR } from './urgency.ts';
 import type { Category, Task } from './types.ts';
@@ -200,6 +200,31 @@ check('빈 판은 끌 것이 없다', empty.runwayContent <= empty.runwayHeight,
 const light = computeAxis(fill('a', 0, 1, 2), categories, NOW, { budget: BUDGET });
 check('한가하면 예산을 다 쓰지 않는다', light.height < BUDGET, true);
 check('한가하면 지남 구역이 자리를 비운다', light.overdueHeight, 0);
+
+// ---- 폭에 상한과 하한이 둘 다 있는가 ----
+//
+// 상한만 있으면 주제가 하나일 때 기둥이 194px까지 쪼그라들어 입력줄보다
+// 좁아집니다. 보기만 어긋나는 게 아니라, 레인이 폭 전부를 쓰면 카드가
+// 펼쳐질 옆자리가 없어서 잘린 제목을 읽을 방법이 사라집니다.
+
+for (const n of [1, 2, 3, 4, maxTopicsPerPage()]) {
+  const { laneW, width } = laneMetrics(n);
+  check(`주제 ${n}개 — 폭이 상한을 넘지 않는다`, width <= L.maxWidth, true);
+  check(`주제 ${n}개 — 폭이 하한 아래로 안 내려간다`, width >= L.minWidth, true);
+  check(`주제 ${n}개 — 레인이 laneMin 아래로 안 내려간다`, laneW >= L.laneMin, true);
+  check(
+    `주제 ${n}개 — 레인이 폭을 남김없이 채운다`,
+    width - (L.gutter + n * laneW + (n - 1) * L.laneGap) < n,
+    true
+  );
+}
+
+check('주제가 하나면 레인이 하한을 채운다', laneMetrics(1).laneW, L.minWidth - L.gutter);
+check(
+  '주제가 늘면 레인이 좁아진다',
+  laneMetrics(1).laneW > laneMetrics(4).laneW && laneMetrics(4).laneW >= laneMetrics(6).laneW,
+  true
+);
 
 console.log(`\n예산 ${BUDGET}px → 기둥 ${axis.height}px (지남 ${axis.overdueHeight} / 활주로 ${axis.runwayHeight} / 대기 ${axis.queueHeight})`);
 console.log(`${pass} passed, ${fail} failed`);
