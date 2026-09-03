@@ -49,6 +49,8 @@
   let quickAdd: QuickAdd | undefined = $state();
   let reducedMotion = $state(false);
   let panel: HTMLElement | undefined = $state();
+  /** 기둥을 감싼 상자. 창을 옮길 때 이 자리를 붙들어 둡니다 */
+  let columnBox: HTMLElement | undefined = $state();
 
   /** 마우스가 올라와 있거나 포커스를 쥐고 있으면 조작 중으로 봅니다 */
   let hovering = $state(false);
@@ -447,6 +449,14 @@
   });
 
   /**
+   * 기둥이 패널 위쪽에서 얼마나 내려와 있는지. 마지막으로 창을 맞출 때의 값입니다.
+   *
+   * 배율 안쪽 CSS 픽셀로 잽니다 — getBoundingClientRect는 zoom이 곱해진 값을
+   * 주므로 나눠서 보관합니다. 그래야 배율을 바꿔도 이 값의 뜻이 같습니다.
+   */
+  let columnTop: number | null = null;
+
+  /**
    * 창을 내용에 맞춥니다.
    *
    * 위젯에서 스크롤은 최후의 수단입니다. 할 일을 하나 추가했다고 스크롤이
@@ -455,12 +465,43 @@
    */
   async function fitWindow() {
     if (!inTauri || !panel) return;
-    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+    const { getCurrentWindow, LogicalPosition, LogicalSize } = await import(
+      '@tauri-apps/api/window'
+    );
     const rect = panel.getBoundingClientRect();
     const width = Math.ceil(rect.width) + PAD * 2;
     const height = Math.ceil(rect.height) + PAD * 2;
+
+    /**
+     * 기둥은 화면에서 움직이지 않습니다.
+     *
+     * 창은 왼쪽 위를 붙들고 크기가 변합니다. 그래서 기둥 **위쪽**의 무엇이든
+     * 높이가 변하면 — 마감·반복 줄이 접히고 펴지는 것이 그렇습니다 — 기둥이
+     * 그만큼 화면에서 위아래로 끌려 다닙니다. 마우스를 스칠 때마다 읽고 있던
+     * 카드가 62px씩 뛰면 그건 위젯이 아니라 방해물입니다.
+     *
+     * 그래서 접힌 만큼 창을 아래로 내립니다. 창 위쪽 가장자리가 움직이고
+     * 기둥은 제자리에 섭니다 — 헤더가 기둥 위로 자라나는 것처럼 보입니다.
+     *
+     * 기둥 **아래**에서 자라는 것들(설정 패널, 되돌리기 팝업)은 이 값을
+     * 바꾸지 않으므로 창이 움직이지 않고 아래로만 길어집니다. 원래 그래야
+     * 하는 대로입니다.
+     */
+    const zoom = view.zoom || 1;
+    const top = columnBox
+      ? (columnBox.getBoundingClientRect().top - rect.top) / zoom
+      : null;
+
     try {
-      await getCurrentWindow().setSize(new LogicalSize(width, height));
+      const win = getCurrentWindow();
+      if (top !== null && columnTop !== null && Math.abs(top - columnTop) > 0.5) {
+        const shift = (top - columnTop) * zoom;
+        const scale = await win.scaleFactor();
+        const at = (await win.outerPosition()).toLogical(scale);
+        await win.setPosition(new LogicalPosition(at.x, Math.round(at.y - shift)));
+      }
+      if (top !== null) columnTop = top;
+      await win.setSize(new LogicalSize(width, height));
     } catch (err) {
       // 조용히 지나가면 창이 내용과 어긋난 채로 남고, 사용자는 위젯 주위에
       // 설명 없는 여백을 봅니다. 무엇을 요청했는지까지 함께 적습니다 —
@@ -534,6 +575,18 @@
     for (const t of demo) await addTask(t);
   }
 
+
+  /**
+   * 마감·반복 줄을 접을 때.
+   *
+   * 손을 대지 않았고, 설정도 안 열려 있고, 고치는 중인 카드도 없을 때입니다.
+   * 뒤의 둘을 빼면 안 됩니다 — 설정을 열어 둔 채 마우스를 치우거나, 카드를
+   * 고치다 다른 창을 잠깐 보면, 방금 정한 마감과 반복이 눈앞에서 사라집니다.
+   *
+   * 전역 단축키(Ctrl+Alt+G)는 따로 다룰 것이 없습니다. 그게 입력칸에 커서를
+   * 두므로 focused가 켜지고, 그러면 여기가 저절로 펼쳐집니다.
+   */
+  const compact = $derived(!interacting && !editing && editTarget === null);
 
   const sorted = $derived([...store.categories].sort((a, b) => a.order - b.order));
 </script>
@@ -622,9 +675,14 @@
       editing={editTarget}
       onEdit={commitEdit}
       onCancelEdit={() => (editTarget = null)}
+      {compact}
     />
 
 
+    <!-- 감싸는 상자 하나. 창을 다시 맞출 때 기둥이 패널 안에서 어디쯤 있는지
+         재기 위한 자리입니다 — Column 안쪽 클래스를 여기서 찾아 쓰면 그쪽을
+         고칠 때마다 조용히 끊깁니다. -->
+    <div class="column-box" bind:this={columnBox}>
     <Column
       tasks={store.tasks}
       categories={sorted}
@@ -638,6 +696,7 @@
       onToggle={onComplete}
       onMenu={(task, x, y) => (menu = { task, x, y })}
     />
+    </div>
 
     {#if editing}
       <SettingsPanel
@@ -749,6 +808,12 @@
       radial-gradient(680px 420px at 12% -5%, rgba(90, 80, 190, 0.34), transparent 62%),
       radial-gradient(560px 400px at 96% 108%, rgba(20, 120, 130, 0.28), transparent 60%),
       linear-gradient(160deg, #171a26 0%, #0d0f17 55%, #12111c 100%);
+  }
+
+  /* 기둥을 재기 위한 상자일 뿐입니다. flex로 두어야 안쪽 .widget이 예전처럼
+     flex 아이템으로 남고, 폭과 정렬이 감싸기 전과 똑같이 나옵니다. */
+  .column-box {
+    display: flex;
   }
 
   .panel {

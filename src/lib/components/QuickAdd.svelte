@@ -12,7 +12,6 @@
     MAX_COUNT,
     normalizeRepeat,
     WEEKDAY_NAMES,
-    WEEKDAYS_ONLY,
     type Repeat,
   } from '../repeat';
   import type { Category, NewTask, Task } from '../types';
@@ -25,6 +24,7 @@
     editing = null,
     onEdit,
     onCancelEdit,
+    compact = false,
     openSheet = $bindable(null),
   }: {
     categories: Category[];
@@ -45,6 +45,17 @@
       patch: { title: string; due: number; categoryId: string; repeat?: Repeat }
     ) => void;
     onCancelEdit: () => void;
+    /**
+     * 마감·반복 줄을 접어 둘 것인가.
+     *
+     * 평소의 위젯은 보는 물건이지 적는 물건이 아닙니다. 그런데 칩 줄 둘이
+     * 늘 자리를 차지하면, 아무것도 안 하고 있을 때조차 위젯의 위쪽 3분의 1이
+     * 입력칸입니다. 손을 대는 동안에만 펼칩니다.
+     *
+     * 입력칸 자체는 접지 않습니다. 그건 이 위젯에 무언가를 적을 수 있다는
+     * 사실을 알리는 유일한 표시라, 사라지면 적는 법을 알 방법이 없습니다.
+     */
+    compact?: boolean;
     /**
      * 지금 열려 있는 팝오버. 셋 중 하나만 열리므로 한 칸이면 충분합니다.
      *
@@ -120,13 +131,6 @@
   const weekly = $derived(repeat?.unit === 'week');
   /** 지금 켜져 있는 요일들. 고른 적이 없으면 첫 회차의 요일 하나 */
   const chosenWeekdays = $derived(repeat?.weekdays ?? [firstDue.getDay()]);
-  /** 월~금이 정확히 켜져 있는가. 바로가기 버튼이 이미 그 상태인지 알려 줍니다 */
-  const isWeekdaysOnly = $derived(
-    weekly &&
-      repeat?.every === 1 &&
-      chosenWeekdays.length === 5 &&
-      WEEKDAYS_ONLY.every((w) => chosenWeekdays.includes(w))
-  );
 
   // 줄 앞에 '반복'이 이미 적혀 있으므로 칩은 값만 말합니다.
   const repeatLabel = $derived(
@@ -157,11 +161,6 @@
     // 반복을 그만두려면 '안 함'이라는 분명한 자리가 따로 있습니다.
     if (on.size === 0) return;
     setRepeat({ ...repeat, weekdays: [...on].sort((a, b) => a - b) });
-  }
-
-  function pickWeekdaysOnly() {
-    if (!repeat) return;
-    setRepeat({ ...repeat, unit: 'week', every: 1, weekdays: [...WEEKDAYS_ONLY] });
   }
 
   function pickCount(left: number | null) {
@@ -405,6 +404,7 @@
 
   <!-- 날짜·시각도 직접 그립니다. 네이티브 입력은 달력과 목록 모양을 OS가
        정해서 위젯과 따로 놀고, 지우기 버튼처럼 우리가 원치 않는 조작도 끼어듭니다. -->
+  {#if !compact}
   <div class="row due">
     <span class="lbl">마감</span>
     {#if editing}
@@ -610,15 +610,6 @@
                 </button>
               {/each}
             </div>
-            <!-- 학기 중에 매일 하는 일은 대개 주말을 뺍니다. 그 다섯 번을
-                 한 번으로 줄이는 바로가기이고, 주기 줄에 '평일' 버튼을 따로
-                 두지 않는 대신 여기가 그 자리입니다. -->
-            <button
-              type="button"
-              class="wd-all"
-              class:on={isWeekdaysOnly}
-              onclick={pickWeekdaysOnly}>월~금 전부</button
-            >
           {/if}
 
           {#if repeat}
@@ -674,6 +665,7 @@
       </span>
     {/if}
   </div>
+  {/if}
 </form>
 
 <svelte:window
@@ -974,31 +966,6 @@
     border-color: rgba(160, 150, 255, 0.6);
   }
 
-  .wd-all {
-    font: inherit;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.6);
-    background: transparent;
-    border: 1px dashed rgba(255, 255, 255, 0.18);
-    border-radius: 6px;
-    padding: 4px 0;
-    cursor: pointer;
-  }
-
-  .wd-all:hover {
-    color: #ededf5;
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  /* 이미 월~금이면 눌러도 바뀌는 게 없습니다. 그 사실을 눌러 보기 전에
-     알려 주는 편이, 아무 반응 없는 버튼을 두는 것보다 낫습니다. */
-  .wd-all.on {
-    color: rgba(207, 203, 255, 0.9);
-    border-style: solid;
-    border-color: rgba(160, 150, 255, 0.4);
-    cursor: default;
-  }
-
   .count {
     display: flex;
     flex-direction: column;
@@ -1021,6 +988,10 @@
     font-size: 12px;
     padding: 4px 7px;
     border-radius: 6px;
+    /* 숫자가 '회' 바로 옆에 붙어야 "12회"라는 한 덩어리로 읽힙니다. 왼쪽에
+       붙어 있으면 넓은 칸 건너편의 '회'와 따로 놉니다. 자리표시 하이픈도
+       같은 자리에 서서, 무엇이 채워질 자리인지 가리킵니다. */
+    text-align: right;
   }
 
   /* 숫자 칸의 증감 화살표를 뺍니다. 폭이 좁아 화살표가 숫자를 밀어냅니다 */
