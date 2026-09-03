@@ -191,6 +191,9 @@
    *
    * 재서 구합니다. 나열해서 더하면 편집 패널을 열고 닫을 때마다 빠뜨립니다.
    * 기둥이 줄면 패널도 같이 줄어 이 값은 그대로라, 되먹임이 생기지 않습니다.
+   *
+   * 다만 '늘 붙어 있는 것'만 셉니다. 높이가 오르내리는 것을 여기 넣으면 그
+   * 오르내림이 그대로 기둥의 예산이 되어, 손만 올려도 눈금이 다시 짜입니다.
    */
   let chromeHeight = $state(150);
 
@@ -209,10 +212,24 @@
        * 제 상한을 따로 가지고 있으므로 창은 예측 가능한 만큼만 커집니다.
        */
       const editor = root.querySelector('.editor');
+      /**
+       * 마감·반복 줄도 뺍니다.
+       *
+       * 이 줄들은 손을 올리면 나타나고 떼면 사라집니다. 그대로 세면 chrome이
+       * 67px씩 오르내리고, 그만큼 기둥의 예산이 깎였다 늘었다 합니다. 예산이
+       * 바뀌면 구역 높이가 다시 나뉘므로, 마우스를 스치기만 해도 카드가
+       * 재배치되고 지남 구역의 카드가 밀려납니다.
+       *
+       * 빼고 재면 예산은 접히든 펴지든 같은 값입니다. 펼친 동안에는 위젯이
+       * 의도한 상한보다 67px 커지지만, 그건 손을 대고 있는 잠깐이고
+       * 눈금이 흔들리는 것과는 견줄 일이 아닙니다.
+       */
+      const reveal = root.querySelector('.reveal');
       const gap =
         root.getBoundingClientRect().height -
         col.getBoundingClientRect().height -
-        (editor?.getBoundingClientRect().height ?? 0);
+        (editor?.getBoundingClientRect().height ?? 0) -
+        (reveal?.getBoundingClientRect().height ?? 0);
       const next = Math.round(gap / (view.zoom || 1));
       if (Number.isFinite(next) && Math.abs(next - chromeHeight) > 1) chromeHeight = next;
     };
@@ -457,6 +474,30 @@
   let columnTop: number | null = null;
 
   /**
+   * 창을 옮길 수 있는가.
+   *
+   * 한 번 거절당하면 다시 묻지 않습니다. 권한이 없거나 플랫폼이 막는 상황은
+   * 다음 프레임에 달라지지 않는데, 매번 시도하면 경고만 쌓이고 그때마다
+   * 크기 맞추기가 늦어집니다.
+   */
+  let canPin = true;
+
+  /**
+   * 화면에 막혀 못 옮긴 거리.
+   *
+   * 위로 68px 올라가야 하는데 화면 꼭대기에 걸려 52px만 올라갔다면, 접을 때
+   * 그대로 68px을 내려보내면 안 됩니다. 16px씩 남는 그 차이가 접었다 펼 때마다
+   * 쌓여서 위젯이 화면 아래로 슬금슬금 흘러내립니다.
+   *
+   * 못 간 만큼을 적어 두었다가 반대 방향으로 움직일 때 함께 갚습니다.
+   *
+   * 반올림하고 남은 소수점도 여기 담습니다. 미끄러지는 200ms 동안 창을 열두어
+   * 번 옮기는데, 그때마다 0.5px씩 버리면 그 부스러기가 쌓여 한 번 접었다 펼
+   * 때마다 위젯이 2px씩 흔들립니다.
+   */
+  let pinDebt = 0;
+
+  /**
    * 창을 내용에 맞춥니다.
    *
    * 위젯에서 스크롤은 최후의 수단입니다. 할 일을 하나 추가했다고 스크롤이
@@ -465,7 +506,7 @@
    */
   async function fitWindow() {
     if (!inTauri || !panel) return;
-    const { getCurrentWindow, LogicalPosition, LogicalSize } = await import(
+    const { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize } = await import(
       '@tauri-apps/api/window'
     );
     const rect = panel.getBoundingClientRect();
@@ -487,20 +528,57 @@
      * 바꾸지 않으므로 창이 움직이지 않고 아래로만 길어집니다. 원래 그래야
      * 하는 대로입니다.
      */
+    const win = getCurrentWindow();
     const zoom = view.zoom || 1;
-    const top = columnBox
-      ? (columnBox.getBoundingClientRect().top - rect.top) / zoom
-      : null;
+    const top = columnBox ? (columnBox.getBoundingClientRect().top - rect.top) / zoom : null;
+    const shift = top !== null && columnTop !== null ? (top - columnTop) * zoom : 0;
 
-    try {
-      const win = getCurrentWindow();
-      if (top !== null && columnTop !== null && Math.abs(top - columnTop) > 0.5) {
-        const shift = (top - columnTop) * zoom;
+    /**
+     * 기준값은 무슨 일이 있어도 갱신합니다.
+     *
+     * 예전에는 옮기기가 실패하면 여기까지 오지 못했습니다. 그러면 기준값이
+     * 옛 자리에 멈춰 있어서 **그다음 모든 맞추기가 같은 실패를 되풀이합니다**.
+     * 창은 그 세션 내내 크기를 못 바꾸고, 설정을 열어도 커지지 않고, 손을
+     * 올려 줄이 펼쳐지면 그만큼이 창 밖으로 잘려 나갑니다.
+     */
+    if (top !== null) columnTop = top;
+
+    /**
+     * 자리 붙들기는 실패해도 크기 맞추기를 막지 않습니다.
+     *
+     * 둘을 한 try에 두었던 것이 위의 사고였습니다. 크기 맞추기는 이 위젯이
+     * 서 있는 바탕이고 자리 붙들기는 그 위에 얹은 편의라, 얹은 것이 무너질 때
+     * 바탕까지 끌고 내려가면 안 됩니다.
+     */
+    if (canPin && Math.abs(shift) > 0.5) {
+      try {
         const scale = await win.scaleFactor();
         const at = (await win.outerPosition()).toLogical(scale);
-        await win.setPosition(new LogicalPosition(at.x, Math.round(at.y - shift)));
+
+        /**
+         * 화면 위로는 넘어가지 않습니다.
+         *
+         * 위젯을 화면 꼭대기 가까이 두면 헤더가 자라날 자리가 없습니다. 그대로
+         * 밀어 올리면 창 위쪽이 화면 밖으로 나가고, 하필 거기 있는 것이 방금
+         * 펼친 마감·반복 줄과 입력칸입니다 — 손을 올려 꺼낸 것이 꺼내는 순간
+         * 화면 밖으로 나가는 셈입니다.
+         *
+         * 올라갈 자리가 없으면 안 올라갑니다. 그만큼 기둥이 내려앉지만, 그건
+         * 자리가 없을 때만이고 못 쓰게 되는 것보다 낫습니다.
+         */
+        const mon = await currentMonitor();
+        const ceiling = mon ? mon.workArea.position.toLogical(scale).y : -Infinity;
+        const want = at.y - shift + pinDebt;
+        const y = Math.max(ceiling, Math.round(want));
+        pinDebt = want - y;
+        await win.setPosition(new LogicalPosition(at.x, y));
+      } catch (err) {
+        canPin = false;
+        console.warn('창을 옮길 수 없어 기둥 붙들기를 끕니다. 크기는 계속 맞춥니다.', err);
       }
-      if (top !== null) columnTop = top;
+    }
+
+    try {
       await win.setSize(new LogicalSize(width, height));
     } catch (err) {
       // 조용히 지나가면 창이 내용과 어긋난 채로 남고, 사용자는 위젯 주위에
