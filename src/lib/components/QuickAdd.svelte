@@ -128,8 +128,9 @@
       WEEKDAYS_ONLY.every((w) => chosenWeekdays.includes(w))
   );
 
+  // 줄 앞에 '반복'이 이미 적혀 있으므로 칩은 값만 말합니다.
   const repeatLabel = $derived(
-    repeat ? `${describeCycle(repeat, firstDue.getTime())} · ${describeCount(repeat.left)}` : '반복 없음'
+    repeat ? `${describeCycle(repeat, firstDue.getTime())} · ${describeCount(repeat.left)}` : '안 함'
   );
 
   /** 직접 적는 횟수. 비어 있으면 프리셋 중 하나를 쓰고 있다는 뜻입니다 */
@@ -538,11 +539,22 @@
       {/if}
     </div>
 
-    <!--
-      반복은 마감 옆에 둡니다. 다른 자리에 두면 "언제까지"와 "얼마 간격으로"가
-      서로 다른 종류의 값처럼 보이는데, 실은 둘 다 이 할 일이 언제 찾아오는지를
-      말하는 한 덩어리입니다. 첫 회차가 마감 칩이고 그다음이 이 칩입니다.
-    -->
+  </div>
+
+  <!--
+    반복은 제 줄을 가집니다.
+
+    마감 옆에 끼워 뒀더니 칩 글자가 바뀔 때마다 줄이 다시 짜였습니다 — '안 함'과
+    '매주 월·화·수·목 · 계속'은 폭이 두 배 넘게 차이 나서, 고르는 동안 칩이
+    아랫줄로 밀렸다 올라왔다 했습니다. 칩에 붙어 있는 팝오버까지 같이 뛰니
+    누르려던 자리가 매번 움직였습니다.
+
+    제 줄에 두면 옆에 다툴 것이 없어 어떤 값을 골라도 자리가 그대로입니다.
+    덤으로 줄 이름이 '반복'이 되어 칩은 값만 말하면 됩니다.
+  -->
+  <div class="row due rep-row">
+    <span class="lbl">반복</span>
+
     <div class="picker">
       <button
         type="button"
@@ -558,7 +570,7 @@
         }}
       >
         {#if repeat}<span class="cycle" aria-hidden="true">↻</span>{/if}
-        {repeatLabel}
+        <span class="chip-label">{repeatLabel}</span>
         <span class="caret" class:up={repeatOpen}>▾</span>
       </button>
 
@@ -611,7 +623,7 @@
 
           {#if repeat}
             <div class="count">
-              <span class="colhead">횟수</span>
+              <span class="colhead">반복 횟수</span>
               <div class="quick">
                 {#each COUNT_PRESETS as n (n ?? 'forever')}
                   <button
@@ -630,21 +642,24 @@
                   min="1"
                   max={MAX_COUNT}
                   inputmode="numeric"
-                  placeholder="—"
+                  placeholder="-"
                   value={countText}
                   oninput={(e) => typeCount(e.currentTarget.value)}
                 />
                 회
               </label>
-              <!-- 기본이 '계속'이라, 그만두는 방법이 여기밖에 없으면 안 됩니다.
-                   카드를 우클릭해도 끝낼 수 있다는 것을 여기서 알려 둡니다. -->
-              <p class="note">
-                {#if repeat.left === null}
-                  끝을 정하지 않았습니다. 카드를 우클릭해 언제든 끝낼 수 있습니다.
-                {:else}
-                  {repeat.left}번째 회차를 끝내면 반복도 함께 끝납니다.
-                {/if}
-              </p>
+              <!--
+                한 문장으로 고정합니다.
+                
+                고른 값에 따라 문장을 갈아 끼웠더니, 횟수를 누를 때마다 안내가
+                통째로 바뀌어 눈이 그때마다 다시 읽어야 했습니다. 게다가 그 안내가
+                말하던 것("15번째 회차를 끝내면…")은 칩에 이미 '15회 남음'으로
+                적혀 있어서 같은 말을 두 번 한 셈입니다.
+                
+                여기 남길 것은 칩이 말하지 못하는 하나뿐입니다 — 나가는 문이
+                어디 있는가. 그건 무엇을 고르든 같으니 바뀔 이유가 없습니다.
+              -->
+              <p class="note">카드를 우클릭해 반복을 끝낼 수 있습니다.</p>
             </div>
           {/if}
 
@@ -831,17 +846,43 @@
   /* ---- 마감 ---- */
 
   /**
-   * 마감 줄은 접힙니다.
+   * 마감 줄은 좁으면 접힙니다.
    *
-   * 칩이 셋(날짜·시각·반복)이 되면서 좁은 폭에서 한 줄에 못 담깁니다. 접지
-   * 않으면 줄이 옆으로 자라 위젯 폭을 밀어내고, 위젯이 입력줄을 따라가므로
-   * 반복 칩 하나 때문에 기둥 전체가 넓어집니다.
+   * 수정 중에는 '취소'가 붙어 날짜·시각과 함께 한 줄을 넘길 수 있습니다.
+   * 접지 않으면 줄이 옆으로 자라 위젯 폭을 밀어내고, 위젯이 입력줄을
+   * 따라가므로 버튼 하나 때문에 기둥 전체가 넓어집니다.
    */
   .due {
     align-items: center;
     flex-wrap: wrap;
     row-gap: 5px;
     padding-left: 2px;
+  }
+
+  /**
+   * 반복 줄은 절대 접히지 않습니다.
+   *
+   * 접히는 것을 막는 게 이 줄의 존재 이유입니다. 값이 길어지면 줄을 넘기는
+   * 대신 칩 글자를 말줄임합니다 — 잘린 글자는 칩을 열면 그대로 다 보이지만,
+   * 뛰어다니는 칩은 누를 때마다 자리를 다시 찾게 만듭니다.
+   */
+  .rep-row {
+    flex-wrap: nowrap;
+  }
+
+  .rep-row .picker {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .rep-row .hint {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .chip {
@@ -857,6 +898,8 @@
     padding: 5px 9px;
     cursor: pointer;
     white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .chip:hover {
