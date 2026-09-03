@@ -222,18 +222,17 @@ export interface CyclePreset {
 /**
  * 주기 선택지.
  *
- * '평일'을 따로 둡니다. 매주 반복에서 월~금을 다섯 번 눌러도 같은 값이지만,
- * 학기 중에 매일 하는 일은 대개 주말을 빼기 때문에 그 다섯 번이 자주
- * 반복됩니다. 자주 하는 일에는 이름이 있어야 합니다.
+ * 한때 '평일'을 여기 뒀는데 뺐습니다. 매주에서 월~금을 켠 것과 값이 한 글자도
+ * 다르지 않고, 요일 줄에 '월~금 전부' 바로가기가 이미 있어서 같은 값을 만드는
+ * 길이 둘이었습니다. 길이 둘이면 사용자는 어느 쪽이 무슨 차이인지 찾게 되는데,
+ * 찾을 차이가 없습니다.
+ *
+ * '평일'이라는 말 자체는 남습니다 — 입력칸에 "평일 스탠드업"이라고 적으면
+ * 알아듣고, 월~금이 켜진 규칙은 칩에도 '평일'로 적힙니다. 없앤 것은 버튼이지
+ * 개념이 아닙니다.
  */
 export const CYCLE_PRESETS: CyclePreset[] = [
   { id: 'day', label: '매일', make: () => ({ unit: 'day', every: 1 }), weekly: false },
-  {
-    id: 'weekday',
-    label: '평일',
-    make: () => ({ unit: 'week', every: 1, weekdays: [...WEEKDAYS_ONLY] }),
-    weekly: true,
-  },
   {
     id: 'week',
     label: '매주',
@@ -260,10 +259,7 @@ export function cycleIdOf(r: Repeat | null): string | null {
   if (r.unit === 'day' && r.every === 1) return 'day';
   if (r.unit === 'month' && r.every === 1) return 'month';
   if (r.unit === 'week') {
-    const wds = cleanWeekdays(r.weekdays);
-    if (r.every === 1 && wds && wds.length === 5 && WEEKDAYS_ONLY.every((w) => wds.includes(w))) {
-      return 'weekday';
-    }
+    // 월~금도 '매주'입니다. 켜진 요일은 아래 요일 줄이 따로 보여 줍니다.
     if (r.every === 1) return 'week';
     if (r.every === 2) return 'biweek';
   }

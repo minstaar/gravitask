@@ -207,8 +207,12 @@ check(
 /* ---- 선택지와 규칙이 서로를 알아보는가 ---- */
 
 check('매일 → day', cycleIdOf(rep({ unit: 'day' })), 'day');
-check('월~금 → weekday', cycleIdOf(rep({ unit: 'week', weekdays: [1, 2, 3, 4, 5] })), 'weekday');
 check('매주 월 → week', cycleIdOf(rep({ unit: 'week', weekdays: [1] })), 'week');
+// 월~금은 '평일'이라 읽히지만 주기로는 그냥 매주입니다. 버튼이 따로 없으니
+// 되짚을 때도 매주로 돌아와야, 화면에서 '매주'가 켜지고 요일 줄이 월~금을
+// 보여 주는 한 가지 모습만 남습니다.
+check('월~금도 주기로는 매주', cycleIdOf(rep({ unit: 'week', weekdays: [1, 2, 3, 4, 5] })), 'week');
+check('그래도 읽을 때는 평일', describeCycle(rep({ unit: 'week', weekdays: [1, 2, 3, 4, 5] })), '평일');
 check('격주 → biweek', cycleIdOf(rep({ unit: 'week', every: 2 })), 'biweek');
 check('매월 → month', cycleIdOf(rep({ unit: 'month' })), 'month');
 check('선택지에 없는 규칙은 null', cycleIdOf(rep({ unit: 'day', every: 3 })), null);

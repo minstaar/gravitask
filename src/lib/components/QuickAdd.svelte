@@ -120,6 +120,13 @@
   const weekly = $derived(repeat?.unit === 'week');
   /** 지금 켜져 있는 요일들. 고른 적이 없으면 첫 회차의 요일 하나 */
   const chosenWeekdays = $derived(repeat?.weekdays ?? [firstDue.getDay()]);
+  /** 월~금이 정확히 켜져 있는가. 바로가기 버튼이 이미 그 상태인지 알려 줍니다 */
+  const isWeekdaysOnly = $derived(
+    weekly &&
+      repeat?.every === 1 &&
+      chosenWeekdays.length === 5 &&
+      WEEKDAYS_ONLY.every((w) => chosenWeekdays.includes(w))
+  );
 
   const repeatLabel = $derived(
     repeat ? `${describeCycle(repeat, firstDue.getTime())} · ${describeCount(repeat.left)}` : '반복 없음'
@@ -591,9 +598,15 @@
                 </button>
               {/each}
             </div>
-            {#if cycleId !== 'weekday'}
-              <button type="button" class="wd-all" onclick={pickWeekdaysOnly}>월~금 전부</button>
-            {/if}
+            <!-- 학기 중에 매일 하는 일은 대개 주말을 뺍니다. 그 다섯 번을
+                 한 번으로 줄이는 바로가기이고, 주기 줄에 '평일' 버튼을 따로
+                 두지 않는 대신 여기가 그 자리입니다. -->
+            <button
+              type="button"
+              class="wd-all"
+              class:on={isWeekdaysOnly}
+              onclick={pickWeekdaysOnly}>월~금 전부</button
+            >
           {/if}
 
           {#if repeat}
@@ -872,15 +885,18 @@
     width: 232px;
   }
 
-  /* 주기 여섯 개가 한 줄에 다 들어가면 글자가 뭉갭니다. 접히게 두고 각 칸은
-     내용만큼만 차지하게 합니다 — .quick의 flex:1은 달력의 네 칸용입니다. */
+  /* 주기 다섯 개('안 함' 포함)가 한 줄에 들어갑니다. 좌우 여백이 8px일 때
+     합이 218px으로 214px을 4px 넘겨 접혔는데, 접힌 줄에 하나만 남으면 그
+     하나가 다른 종류처럼 보입니다. 여백을 6px로 낮춰 한 줄에 담습니다.
+     그래도 모자란 화면에서는 접히게 두고, 각 칸은 내용만큼만 차지합니다 —
+     .quick의 flex:1은 달력의 네 칸용입니다. */
   .rep > .quick {
     flex-wrap: wrap;
   }
 
   .rep > .quick button {
     flex: 0 1 auto;
-    padding: 4px 8px;
+    padding: 4px 6px;
   }
 
   .quick button.on {
@@ -929,6 +945,15 @@
   .wd-all:hover {
     color: #ededf5;
     background: rgba(255, 255, 255, 0.08);
+  }
+
+  /* 이미 월~금이면 눌러도 바뀌는 게 없습니다. 그 사실을 눌러 보기 전에
+     알려 주는 편이, 아무 반응 없는 버튼을 두는 것보다 낫습니다. */
+  .wd-all.on {
+    color: rgba(207, 203, 255, 0.9);
+    border-style: solid;
+    border-color: rgba(160, 150, 255, 0.4);
+    cursor: default;
   }
 
   .count {
