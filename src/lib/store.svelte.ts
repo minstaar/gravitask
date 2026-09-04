@@ -592,6 +592,47 @@ export async function updateTask(
 }
 
 /**
+ * 이번 회차만 건너뜁니다.
+ *
+ * 완료와 다릅니다 — 한 것으로 치지 않으므로 기록에 남기지 않습니다. 이번 주
+ * 수업이 휴강이면 그 주는 한 일도 안 한 일도 아니고, 그냥 없던 회차입니다.
+ * 기록에 넣으면 나중에 '몇 번 했나'를 셀 때 거짓말이 됩니다.
+ *
+ * 삭제와도 다릅니다. 계열은 그대로 살아서 다음 회차로 굴러갑니다.
+ *
+ * 마지막 회차를 건너뛰면 남는 것이 없어 줄이 사라집니다. 그때도 되돌릴 수
+ * 있게 스택에 넣어 둡니다 — 건너뛰기는 되돌리기가 쉬워야 부담 없이 누릅니다.
+ */
+export async function skipOccurrence(task: Task): Promise<void> {
+  if (!task.repeat) return;
+  const src = sourceOf(task);
+  if (!src.writable) return;
+
+  const before: Task = { ...task };
+  const rolled = rollRepeat(task.due, task.repeat, Date.now());
+
+  if (rolled) await src.update?.(task.id, { due: rolled.due, repeat: rolled.repeat });
+  else await src.remove?.(task.id);
+
+  // 굴린 뒤에도 '보냈다'는 기록이 남아 있으면 다음 회차는 마감이 코앞이어도
+  // 두 번 다시 울리지 않습니다.
+  await forgetTask(task.id);
+
+  pushUndo({
+    id: task.id,
+    title: task.title,
+    sourceId: src.id,
+    occurrenceKey: occurrenceOf(task),
+    // 되돌리는 길은 완료한 회차와 같습니다 — 굴러간 것을 되감으면 됩니다.
+    // 기록에 넣은 것이 없으니 지울 기록도 없습니다.
+    kind: 'occurrence',
+    task: before,
+  });
+
+  await refresh();
+}
+
+/**
  * 반복을 끝냅니다. 카드는 남고 규칙만 뗍니다.
  *
  * 끝을 정하지 않은 반복('계속')에는 반드시 나가는 문이 있어야 합니다. 횟수를

@@ -21,6 +21,7 @@
     onEdit,
     onDelete,
     onEndRepeat,
+    onSkip,
     onClose,
   }: {
     task: Task;
@@ -30,6 +31,8 @@
     onDelete: (t: Task) => void;
     /** 반복을 끝냅니다. 카드는 남고 규칙만 떨어집니다 */
     onEndRepeat: (t: Task) => void;
+    /** 이번 회차만 건너뜁니다. 계열은 다음 회차로 굴러갑니다 */
+    onSkip: (t: Task) => void;
     onClose: () => void;
   } = $props();
 
@@ -50,7 +53,7 @@
   /** 화면 밖으로 나가면 안 보입니다. 커서 옆에 붙이되 가장자리에서 접습니다 */
   const style = $derived.by(() => {
     const w = 168;
-    const h = readOnly ? 74 : repeating ? 106 : 76;
+    const h = readOnly ? 74 : repeating ? 136 : 76;
     const left = Math.max(4, Math.min(x, window.innerWidth - w - 4));
     const top = Math.max(4, Math.min(y, window.innerHeight - h - 4));
     return `left:${left}px; top:${top}px; width:${w}px;`;
@@ -92,6 +95,9 @@
          지운 것을 되살리는 방법이 이미 손에 익은 그 동작이어야 합니다. -->
     <button role="menuitem" onclick={() => onDelete(task)}>삭제</button>
     {#if repeating}
+      <!-- 완료와도 삭제와도 다릅니다. 한 것으로 치지 않으니 기록에 남지 않고,
+           계열은 그대로 살아 다음 회차로 굴러갑니다. 이번 주 휴강이 이것입니다. -->
+      <button role="menuitem" onclick={() => onSkip(task)}>이번 회차 건너뛰기</button>
       <!-- 지우기와 다릅니다. 아직 안 한 이번 회차는 그대로 남고, 다음 회차만
            오지 않습니다. 그래서 '반복'을 끝낸다고 적습니다 — '할 일'이 아니라. -->
       <button role="menuitem" onclick={() => onEndRepeat(task)}>반복 끝내기</button>

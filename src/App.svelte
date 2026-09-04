@@ -9,6 +9,7 @@
     addTask,
     calendars,
     endRepeat,
+    skipOccurrence,
     completeTask,
     init,
     moveCategory,
@@ -66,7 +67,7 @@
    * 역할만 합니다. 그래서 팝업이 사라져도 Ctrl+Z는 계속 듣습니다 — 버튼에
    * 단축키를 같이 적어 그 사실을 알립니다.
    */
-  let toast = $state<{ title: string; kind: 'complete' | 'delete' } | null>(null);
+  let toast = $state<{ title: string; kind: 'complete' | 'delete' | 'skip' } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   const UNDO_WINDOW = 7000;
@@ -87,7 +88,9 @@
     settleTimer = setTimeout(() => (settleDelay = 0), theme.motion.completeMs);
   }
 
-  function flash(title: string, kind: 'complete' | 'delete') {
+  const TOAST_LABEL = { complete: '완료', delete: '지움', skip: '건너뜀' } as const;
+
+  function flash(title: string, kind: 'complete' | 'delete' | 'skip') {
     toast = { title, kind };
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toast = null), UNDO_WINDOW);
@@ -149,6 +152,19 @@
   function onEndRepeat(task: Task) {
     menu = null;
     void endRepeat(task);
+  }
+
+  /**
+   * 이번 회차만 건너뜁니다.
+   *
+   * 완료와 같은 팝업을 띄웁니다. 카드가 눈앞에서 다음 날짜로 굴러가 버리므로,
+   * 잘못 눌렀을 때 되돌릴 자리가 보여야 하는 것은 완료와 똑같습니다.
+   */
+  function onSkip(task: Task) {
+    menu = null;
+    holdSettle();
+    void skipOccurrence(task);
+    flash(task.title, 'skip');
   }
 
   /**
@@ -509,13 +525,23 @@
    *
    * 처음 한 번에도 걸어 버리면 앱을 켜는 순간 창이 아직 없는 줄의 높이만큼
    * 더 커졌다가 줄어듭니다. 보이지는 않지만 켤 때마다 창을 두 번 잡는 셈입니다.
+   *
+   * 시계가 끝나면 창을 한 번 더 맞춰 줘야 합니다. 붙잡아 두는 동안은 창이
+   * 실제 내용보다 큰데, 다 접히고 나면 패널 크기가 더는 변하지 않아 관찰자가
+   * 울지 않습니다. 그래서 줄이라고 시키는 사람이 없고, 창은 한참 뒤 다른
+   * 일로 리사이즈가 울릴 때에야 68px을 한꺼번에 줄입니다 — 닫히는 끝에서
+   * 한 번 끊기는 것이 그것입니다. 여기서 제때 시키면 그 한 번이 사라집니다.
    */
   $effect(() => {
-    const now = compact;
-    if (wasCompact !== null && wasCompact !== now) {
-      revealUntil = performance.now() + (reducedMotion ? 0 : REVEAL_MS) + 80;
-    }
-    wasCompact = now;
+    const next = compact;
+    const changed = wasCompact !== null && wasCompact !== next;
+    wasCompact = next;
+    if (!changed) return;
+
+    const hold = (reducedMotion ? 0 : REVEAL_MS) + 80;
+    revealUntil = performance.now() + hold;
+    const timer = setTimeout(() => void requestFit(), hold + 16);
+    return () => clearTimeout(timer);
   });
 
   async function fitWindow() {
@@ -854,7 +880,7 @@
 
     {#if toast}
       <div class="undo">
-        <span class="done-title">{toast.kind === 'delete' ? '지움' : '완료'} · {toast.title}</span>
+        <span class="done-title">{TOAST_LABEL[toast.kind]} · {toast.title}</span>
         <button onclick={() => void undoComplete()}>되돌리기 <kbd>{MOD_LABEL}Z</kbd></button>
       </div>
     {/if}
@@ -874,6 +900,7 @@
     onEdit={startEdit}
     onDelete={onDelete}
     {onEndRepeat}
+    {onSkip}
     onClose={() => (menu = null)}
   />
 {/if}

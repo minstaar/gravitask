@@ -136,13 +136,34 @@
   const repeat = $derived(overrideRepeat ? overrideRepeat.value : parsed.repeat);
 
   /**
+   * 날짜와 규칙 중 어느 쪽을 나중에 손댔는가.
+   *
+   * 둘이 어긋날 때 누구 말을 들을지 정하는 값입니다. 규칙을 방금 골랐으면
+   * 첫 회차가 규칙을 따라가야 하고("평일"을 토요일에 걸면 월요일부터),
+   * 날짜를 방금 골랐으면 그 날짜를 그대로 써야 합니다.
+   */
+  let touched = $state<'date' | 'rule' | null>(null);
+
+  /**
    * 첫 회차.
    *
-   * 요일을 직접 골랐는데 마감일이 그 요일이 아니면, 규칙이 말하는 것과 화면에
-   * 뜰 카드가 어긋납니다. 첫 회차를 규칙 위로 옮기고 그 값을 칩에 그대로
-   * 보여 줍니다 — 조용히 옮기면 저장한 뒤에야 다른 날짜를 발견하게 됩니다.
+   * 규칙을 방금 고른 참이면 규칙 위로 옮깁니다. 요일을 골랐는데 마감일이 그
+   * 요일이 아니면 규칙이 말하는 것과 화면에 뜰 카드가 어긋나기 때문입니다.
+   * 옮긴 값을 칩에 그대로 보여 줍니다 — 조용히 옮기면 저장한 뒤에야 다른
+   * 날짜를 발견하게 됩니다.
+   *
+   * 날짜를 방금 고른 참이면 옮기지 않습니다. 그래야 **이번 회차만** 다른 날로
+   * 미룰 수 있습니다 — "이번 주 수업만 목요일로". 계열은 안 흔들립니다.
+   * 규칙이 제 기준(요일·날짜)을 기억하고 있어서, 다음 회차는 알아서 원래
+   * 자리로 돌아옵니다.
+   *
+   * 기준이 없는 규칙(매일·N일마다)만 예외입니다. 돌아갈 자리가 없으니 옮긴
+   * 만큼 계열이 밀립니다. 매일은 어차피 모든 날이 회차라 티가 안 나고,
+   * "3일마다"는 옮긴 날부터 사흘 간격이 됩니다.
    */
-  const firstDue = $derived(repeat ? new Date(alignToRepeat(dueAt.getTime(), repeat)) : dueAt);
+  const firstDue = $derived(
+    repeat && touched !== 'date' ? new Date(alignToRepeat(dueAt.getTime(), repeat)) : dueAt
+  );
 
   /** 저장할 규칙. 비어 있던 자리(요일·날짜)를 첫 회차에서 채워 둡니다 */
   const repeatToSave = $derived(repeat ? normalizeRepeat(repeat, firstDue.getTime()) : undefined);
@@ -162,6 +183,7 @@
 
   function setRepeat(next: Repeat | null) {
     overrideRepeat = { value: next };
+    touched = 'rule';
   }
 
   function pickCycle(id: string) {
@@ -220,6 +242,7 @@
   function pickDate(d: Date) {
     overrideDate = toDate(d);
     monthAnchor = null;
+    touched = 'date';
     closeAll();
   }
 
@@ -328,6 +351,7 @@
     overrideDate = '';
     overrideTime = '';
     overrideRepeat = null;
+    touched = null;
     countText = '';
     monthAnchor = null;
     closeAll();
@@ -357,6 +381,9 @@
       // 회의' 같은 제목을 되돌려 넣는 순간 파서가 '매주'를 규칙으로 도로
       // 집어가고 제목에서 떼어냅니다.
       overrideRepeat = { value: t.repeat ?? null };
+      // 실어 오는 것은 이미 정해진 값이라 누가 이길 일이 없습니다. 손대는
+      // 쪽이 생길 때부터 따집니다.
+      touched = null;
       countText = '';
       categoryId = t.categoryId;
       closeAll();
@@ -697,10 +724,16 @@
                 말하던 것("15번째 회차를 끝내면…")은 칩에 이미 '15회 남음'으로
                 적혀 있어서 같은 말을 두 번 한 셈입니다.
                 
-                여기 남길 것은 칩이 말하지 못하는 하나뿐입니다 — 나가는 문이
-                어디 있는가. 그건 무엇을 고르든 같으니 바뀔 이유가 없습니다.
+                여기 남길 것은 칩이 말하지 못하는 것뿐입니다 — 시각을 어디서
+                정하는가, 그리고 나가는 문이 어디 있는가. 시트 안에는 시각 칸이
+                없어서, 칩만 눌러 반복을 걸면 마감 기본값(23:59)이 그대로
+                모든 회차의 시각이 됩니다. 어디서 고치는지 여기서 말해 둡니다.
+                둘 다 무엇을 고르든 같으니 바뀔 이유가 없습니다.
               -->
-              <p class="note">카드를 우클릭해 반복을 끝낼 수 있습니다.</p>
+              <p class="note">
+                매 회차는 위 <b>마감</b> 줄의 날짜·시각에 옵니다. 반복은 카드를
+                우클릭해 이번 회차만 건너뛰거나 아예 끝낼 수 있습니다.
+              </p>
             </div>
           {/if}
 
@@ -1058,6 +1091,11 @@
   .own input::-webkit-inner-spin-button {
     appearance: none;
     margin: 0;
+  }
+
+  .note b {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.62);
   }
 
   .note {
