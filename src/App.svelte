@@ -488,17 +488,76 @@
    * 그래서 헤더는 아래로 자랍니다. 기둥이 그만큼 밀려 내려가지만 200ms에
    * 걸쳐 미끄러지므로 튀지 않고, 창은 놓아둔 자리에 그대로 있습니다.
    */
+  /** 마지막으로 창에 부탁한 크기. 같은 값을 두 번 보내지 않습니다 */
+  let lastW = 0;
+  let lastH = 0;
+
+  /**
+   * 마감·반복 줄이 다 펼쳐졌을 때의 높이.
+   *
+   * 처음에는 어림값으로 시작해 한 번 펼쳐 보고 실제 값으로 고칩니다. 조금
+   * 넉넉해도 문제가 없습니다 — 창이 투명해서 남는 자리는 보이지 않습니다.
+   */
+  let revealFull = 72;
+
+  /** 이 시각까지는 미끄러지는 중으로 봅니다 */
+  let revealUntil = 0;
+  let wasCompact: boolean | null = null;
+
+  /**
+   * 접힘이 실제로 바뀔 때만 시계를 겁니다.
+   *
+   * 처음 한 번에도 걸어 버리면 앱을 켜는 순간 창이 아직 없는 줄의 높이만큼
+   * 더 커졌다가 줄어듭니다. 보이지는 않지만 켤 때마다 창을 두 번 잡는 셈입니다.
+   */
+  $effect(() => {
+    const now = compact;
+    if (wasCompact !== null && wasCompact !== now) {
+      revealUntil = performance.now() + (reducedMotion ? 0 : REVEAL_MS) + 80;
+    }
+    wasCompact = now;
+  });
+
   async function fitWindow() {
     if (!inTauri || !panel) return;
     const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
     const rect = panel.getBoundingClientRect();
-    const width = Math.ceil(rect.width) + PAD * 2;
-    const height = Math.ceil(rect.height) + PAD * 2;
-    const win = getCurrentWindow();
 
+    /**
+     * 미끄러지는 동안에는 창을 '다 펼친 크기'로 잡아 둡니다.
+     *
+     * slide는 레이아웃 높이를 매 프레임 바꿉니다. 그대로 두면 관찰자가 매
+     * 프레임 울고 setSize가 매 프레임 나가서, 200ms 사이에 창을 열두 번쯤
+     * 리사이즈합니다. 투명하고 항상 맨 아래에 깔리는 창이라 그때마다 DWM이
+     * 다시 합성하는데, 그게 따라오지 못해 애니메이션이 끊깁니다.
+     *
+     * 아직 안 자란 만큼을 미리 더해 두면 첫 프레임에 최종 크기가 되고, 그
+     * 뒤로는 같은 값이라 아래 '같은 크기면 안 보낸다'에 걸려 IPC가 아예 나가지
+     * 않습니다. 창 리사이즈는 전환당 한 번입니다.
+     *
+     * 남는 자리는 보이지 않습니다 — 창은 투명하고 패널은 위에 붙어 있어서,
+     * 늘어난 만큼은 아래쪽 빈 공간이 됩니다.
+     */
+    const revealEl = panel.querySelector('.reveal');
+    const revealNow = revealEl?.getBoundingClientRect().height ?? 0;
+    const sliding = performance.now() < revealUntil;
+    if (!sliding && revealNow > 0) revealFull = revealNow;
+
+    const pending = sliding ? Math.max(0, revealFull - revealNow) : 0;
+    const width = Math.ceil(rect.width) + PAD * 2;
+    const height = Math.ceil(rect.height + pending) + PAD * 2;
+
+    // 같은 크기면 부르지 않습니다. IPC 한 번이 프레임 하나보다 비쌉니다.
+    if (width === lastW && height === lastH) return;
+    lastW = width;
+    lastH = height;
+
+    const win = getCurrentWindow();
     try {
       await win.setSize(new LogicalSize(width, height));
     } catch (err) {
+      lastW = 0;
+      lastH = 0;
       // 조용히 지나가면 창이 내용과 어긋난 채로 남고, 사용자는 위젯 주위에
       // 설명 없는 여백을 봅니다. 무엇을 요청했는지까지 함께 적습니다 —
       // 실패했다는 사실만으로는 요청한 크기가 틀렸는지 창이 거부한 것인지
