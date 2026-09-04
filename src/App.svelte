@@ -49,8 +49,6 @@
   let quickAdd: QuickAdd | undefined = $state();
   let reducedMotion = $state(false);
   let panel: HTMLElement | undefined = $state();
-  /** 기둥을 감싼 상자. 창을 옮길 때 이 자리를 붙들어 둡니다 */
-  let columnBox: HTMLElement | undefined = $state();
 
   /** 마우스가 올라와 있거나 포커스를 쥐고 있으면 조작 중으로 봅니다 */
   let hovering = $state(false);
@@ -466,117 +464,37 @@
   });
 
   /**
-   * 기둥이 패널 위쪽에서 얼마나 내려와 있는지. 마지막으로 창을 맞출 때의 값입니다.
-   *
-   * 배율 안쪽 CSS 픽셀로 잽니다 — getBoundingClientRect는 zoom이 곱해진 값을
-   * 주므로 나눠서 보관합니다. 그래야 배율을 바꿔도 이 값의 뜻이 같습니다.
-   */
-  let columnTop: number | null = null;
-
-  /**
-   * 창을 옮길 수 있는가.
-   *
-   * 한 번 거절당하면 다시 묻지 않습니다. 권한이 없거나 플랫폼이 막는 상황은
-   * 다음 프레임에 달라지지 않는데, 매번 시도하면 경고만 쌓이고 그때마다
-   * 크기 맞추기가 늦어집니다.
-   */
-  let canPin = true;
-
-  /**
-   * 화면에 막혀 못 옮긴 거리.
-   *
-   * 위로 68px 올라가야 하는데 화면 꼭대기에 걸려 52px만 올라갔다면, 접을 때
-   * 그대로 68px을 내려보내면 안 됩니다. 16px씩 남는 그 차이가 접었다 펼 때마다
-   * 쌓여서 위젯이 화면 아래로 슬금슬금 흘러내립니다.
-   *
-   * 못 간 만큼을 적어 두었다가 반대 방향으로 움직일 때 함께 갚습니다.
-   *
-   * 반올림하고 남은 소수점도 여기 담습니다. 미끄러지는 200ms 동안 창을 열두어
-   * 번 옮기는데, 그때마다 0.5px씩 버리면 그 부스러기가 쌓여 한 번 접었다 펼
-   * 때마다 위젯이 2px씩 흔들립니다.
-   */
-  let pinDebt = 0;
-
-  /**
    * 창을 내용에 맞춥니다.
    *
    * 위젯에서 스크롤은 최후의 수단입니다. 할 일을 하나 추가했다고 스크롤이
    * 생기면 전체를 한눈에 본다는 전제가 무너집니다. 그래서 기둥 높이가
    * 내용에 따라 변하고, 창이 그 크기를 따라갑니다.
+   *
+   * ---
+   *
+   * 창은 왼쪽 위를 붙들고 크기만 바꿉니다. 사용자가 놓아둔 자리는 사용자의
+   * 것이고, 위젯이 스스로 옮겨 다니지 않습니다.
+   *
+   * 한때는 마감·반복 줄이 접히고 펴질 때 그만큼 창을 위아래로 옮겨 기둥을
+   * 화면에 붙들어 두었습니다. 계산은 맞았지만 전제가 틀렸습니다 — 이 위젯을
+   * 화면 꼭대기에 붙여 두면 창이 올라갈 자리가 없어 결국 기둥이 내려앉는데,
+   * 그러면서 창 위치까지 건드립니다. 얻는 것 없이 잃기만 하는 자리가 있는
+   * 겁니다.
+   *
+   * 게다가 자리에 따라 동작이 갈립니다. 가운데에 두면 기둥이 가만히 있고
+   * 위에 두면 움직이는 물건은, 손이 기억할 규칙을 주지 못합니다. 위젯은
+   * 눈보다 손이 먼저 아는 물건이라 그 일관성이 62px보다 값집니다.
+   *
+   * 그래서 헤더는 아래로 자랍니다. 기둥이 그만큼 밀려 내려가지만 200ms에
+   * 걸쳐 미끄러지므로 튀지 않고, 창은 놓아둔 자리에 그대로 있습니다.
    */
   async function fitWindow() {
     if (!inTauri || !panel) return;
-    const { currentMonitor, getCurrentWindow, LogicalPosition, LogicalSize } = await import(
-      '@tauri-apps/api/window'
-    );
+    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
     const rect = panel.getBoundingClientRect();
     const width = Math.ceil(rect.width) + PAD * 2;
     const height = Math.ceil(rect.height) + PAD * 2;
-
-    /**
-     * 기둥은 화면에서 움직이지 않습니다.
-     *
-     * 창은 왼쪽 위를 붙들고 크기가 변합니다. 그래서 기둥 **위쪽**의 무엇이든
-     * 높이가 변하면 — 마감·반복 줄이 접히고 펴지는 것이 그렇습니다 — 기둥이
-     * 그만큼 화면에서 위아래로 끌려 다닙니다. 마우스를 스칠 때마다 읽고 있던
-     * 카드가 62px씩 뛰면 그건 위젯이 아니라 방해물입니다.
-     *
-     * 그래서 접힌 만큼 창을 아래로 내립니다. 창 위쪽 가장자리가 움직이고
-     * 기둥은 제자리에 섭니다 — 헤더가 기둥 위로 자라나는 것처럼 보입니다.
-     *
-     * 기둥 **아래**에서 자라는 것들(설정 패널, 되돌리기 팝업)은 이 값을
-     * 바꾸지 않으므로 창이 움직이지 않고 아래로만 길어집니다. 원래 그래야
-     * 하는 대로입니다.
-     */
     const win = getCurrentWindow();
-    const zoom = view.zoom || 1;
-    const top = columnBox ? (columnBox.getBoundingClientRect().top - rect.top) / zoom : null;
-    const shift = top !== null && columnTop !== null ? (top - columnTop) * zoom : 0;
-
-    /**
-     * 기준값은 무슨 일이 있어도 갱신합니다.
-     *
-     * 예전에는 옮기기가 실패하면 여기까지 오지 못했습니다. 그러면 기준값이
-     * 옛 자리에 멈춰 있어서 **그다음 모든 맞추기가 같은 실패를 되풀이합니다**.
-     * 창은 그 세션 내내 크기를 못 바꾸고, 설정을 열어도 커지지 않고, 손을
-     * 올려 줄이 펼쳐지면 그만큼이 창 밖으로 잘려 나갑니다.
-     */
-    if (top !== null) columnTop = top;
-
-    /**
-     * 자리 붙들기는 실패해도 크기 맞추기를 막지 않습니다.
-     *
-     * 둘을 한 try에 두었던 것이 위의 사고였습니다. 크기 맞추기는 이 위젯이
-     * 서 있는 바탕이고 자리 붙들기는 그 위에 얹은 편의라, 얹은 것이 무너질 때
-     * 바탕까지 끌고 내려가면 안 됩니다.
-     */
-    if (canPin && Math.abs(shift) > 0.5) {
-      try {
-        const scale = await win.scaleFactor();
-        const at = (await win.outerPosition()).toLogical(scale);
-
-        /**
-         * 화면 위로는 넘어가지 않습니다.
-         *
-         * 위젯을 화면 꼭대기 가까이 두면 헤더가 자라날 자리가 없습니다. 그대로
-         * 밀어 올리면 창 위쪽이 화면 밖으로 나가고, 하필 거기 있는 것이 방금
-         * 펼친 마감·반복 줄과 입력칸입니다 — 손을 올려 꺼낸 것이 꺼내는 순간
-         * 화면 밖으로 나가는 셈입니다.
-         *
-         * 올라갈 자리가 없으면 안 올라갑니다. 그만큼 기둥이 내려앉지만, 그건
-         * 자리가 없을 때만이고 못 쓰게 되는 것보다 낫습니다.
-         */
-        const mon = await currentMonitor();
-        const ceiling = mon ? mon.workArea.position.toLogical(scale).y : -Infinity;
-        const want = at.y - shift + pinDebt;
-        const y = Math.max(ceiling, Math.round(want));
-        pinDebt = want - y;
-        await win.setPosition(new LogicalPosition(at.x, y));
-      } catch (err) {
-        canPin = false;
-        console.warn('창을 옮길 수 없어 기둥 붙들기를 끕니다. 크기는 계속 맞춥니다.', err);
-      }
-    }
 
     try {
       await win.setSize(new LogicalSize(width, height));
@@ -821,10 +739,6 @@
     />
 
 
-    <!-- 감싸는 상자 하나. 창을 다시 맞출 때 기둥이 패널 안에서 어디쯤 있는지
-         재기 위한 자리입니다 — Column 안쪽 클래스를 여기서 찾아 쓰면 그쪽을
-         고칠 때마다 조용히 끊깁니다. -->
-    <div class="column-box" bind:this={columnBox}>
     <Column
       tasks={store.tasks}
       categories={sorted}
@@ -838,7 +752,6 @@
       onToggle={onComplete}
       onMenu={(task, x, y) => (menu = { task, x, y })}
     />
-    </div>
 
     {#if editing}
       <SettingsPanel
@@ -950,12 +863,6 @@
       radial-gradient(680px 420px at 12% -5%, rgba(90, 80, 190, 0.34), transparent 62%),
       radial-gradient(560px 400px at 96% 108%, rgba(20, 120, 130, 0.28), transparent 60%),
       linear-gradient(160deg, #171a26 0%, #0d0f17 55%, #12111c 100%);
-  }
-
-  /* 기둥을 재기 위한 상자일 뿐입니다. flex로 두어야 안쪽 .widget이 예전처럼
-     flex 아이템으로 남고, 폭과 정렬이 감싸기 전과 똑같이 나옵니다. */
-  .column-box {
-    display: flex;
   }
 
   .panel {
