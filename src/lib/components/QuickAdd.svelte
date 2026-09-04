@@ -73,10 +73,25 @@
 
   let text = $state('');
   let input: HTMLInputElement | undefined = $state();
-  let listOpen = $state(false);
-  let dateOpen = $state(false);
-  let timeOpen = $state(false);
-  let repeatOpen = $state(false);
+  /**
+   * 지금 열려 있는 팝오버. 한 번에 하나만 열립니다.
+   *
+   * 예전에는 넷이 저마다 boolean을 가지고, 칩을 누를 때마다 '나머지 셋을
+   * 끈다'를 손으로 적었습니다. 그래서 반복 칩을 나중에 더했을 때 앞선 세
+   * 칩의 목록에 그것이 빠져 있었고, 반복을 열어 둔 채 날짜를 누르면 둘이
+   * 함께 떠서 겹쳤습니다. 칩이 늘 때마다 같은 자리가 다시 깨집니다.
+   *
+   * 값을 하나로 두면 '하나만 열린다'가 규칙이 아니라 사실이 됩니다.
+   */
+  type Sheet = 'list' | 'date' | 'time' | 'repeat';
+  let sheet = $state<Sheet | null>(null);
+
+  const listOpen = $derived(sheet === 'list');
+  const dateOpen = $derived(sheet === 'date');
+  const timeOpen = $derived(sheet === 'time');
+  const repeatOpen = $derived(sheet === 'repeat');
+
+  const toggleSheet = (which: Sheet) => (sheet = sheet === which ? null : which);
   /** 달력에서 넘겨 보고 있는 달. null이면 마감일이 속한 달 */
   let monthAnchor = $state<Date | null>(null);
 
@@ -205,7 +220,7 @@
   function pickDate(d: Date) {
     overrideDate = toDate(d);
     monthAnchor = null;
-    dateOpen = false;
+    closeAll();
   }
 
   function shiftDays(n: number) {
@@ -266,14 +281,46 @@
 
   function pickTime(t: string) {
     overrideTime = t;
-    timeOpen = false;
+    closeAll();
   }
 
+  const anyOpen = $derived(sheet !== null);
+
+  /**
+   * 바깥을 누르면 닫습니다.
+   *
+   * 열어 둔 팝오버를 닫는 길이 그 칩을 다시 누르거나 Esc뿐이었습니다. 둘 다
+   * 알아야 쓸 수 있는 방법이고, 열어 놓고 다른 곳을 누르면 팝오버가 그대로
+   * 남아 아래를 가렸습니다. 목록을 열었다가 마음이 바뀌면 그냥 딴 데를 누르는
+   * 것이 사람이 먼저 하는 동작입니다.
+   *
+   * 칩과 시트 안쪽은 건드리지 않습니다. 같은 칩을 다시 누르는 건 닫으라는
+   * 뜻이라 그쪽 토글에 맡겨야 하고(여기서 먼저 닫으면 토글이 도로 열어
+   * 버립니다), 다른 칩을 누르는 건 그 칩이 이미 나머지를 닫고 자기를 엽니다.
+   *
+   * pointerdown에 답니다. click까지 기다리면 누른 자리와 닫히는 순간이
+   * 어긋나 한 박자 늦게 느껴집니다.
+   */
+  $effect(() => {
+    if (!anyOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.('.picker')) return;
+      closeAll();
+    };
+    // 창 밖으로 나가는 것도 '딴 데'입니다. Tauri에서 다른 앱을 누르면 클릭이
+    // 여기까지 오지 않으므로, 창이 포커스를 잃는 것으로 대신 압니다.
+    const onBlur = () => closeAll();
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  });
+
   function closeAll() {
-    listOpen = false;
-    dateOpen = false;
-    timeOpen = false;
-    repeatOpen = false;
+    sheet = null;
   }
 
   function reset() {
@@ -355,9 +402,7 @@
         aria-haspopup="listbox"
         aria-expanded={listOpen}
         onclick={() => {
-          listOpen = !listOpen;
-          dateOpen = false;
-          timeOpen = false;
+          toggleSheet('list');
         }}
       >
         {selected?.name ?? '주제'}
@@ -371,7 +416,6 @@
           role="listbox"
           tabindex="-1"
           bind:this={openSheet}
-          onmouseleave={() => (listOpen = false)}
         >
           {#each categories as c (c.id)}
             <button
@@ -382,7 +426,7 @@
               aria-selected={c.id === categoryId}
               onclick={() => {
                 categoryId = c.id;
-                listOpen = false;
+                closeAll();
                 input?.focus();
               }}
             >
@@ -437,9 +481,7 @@
         aria-haspopup="dialog"
         aria-expanded={dateOpen}
         onclick={() => {
-          dateOpen = !dateOpen;
-          timeOpen = false;
-          listOpen = false;
+          toggleSheet('date');
         }}
       >
         {dateLabel}
@@ -492,9 +534,7 @@
         aria-haspopup="listbox"
         aria-expanded={timeOpen}
         onclick={() => {
-          timeOpen = !timeOpen;
-          dateOpen = false;
-          listOpen = false;
+          toggleSheet('time');
         }}
       >
         {timeValue}
@@ -547,7 +587,7 @@
             </div>
           </div>
 
-          <button type="button" class="done" onclick={() => (timeOpen = false)}>확인</button>
+          <button type="button" class="done" onclick={closeAll}>확인</button>
         </div>
       {/if}
     </div>
@@ -576,10 +616,7 @@
         aria-haspopup="dialog"
         aria-expanded={repeatOpen}
         onclick={() => {
-          repeatOpen = !repeatOpen;
-          dateOpen = false;
-          timeOpen = false;
-          listOpen = false;
+          toggleSheet('repeat');
         }}
       >
         {#if repeat}<span class="cycle" aria-hidden="true">↻</span>{/if}
@@ -597,7 +634,7 @@
               class:on={repeat === null}
               onclick={() => {
                 setRepeat(null);
-                repeatOpen = false;
+                closeAll();
               }}>안 함</button
             >
             {#each CYCLE_PRESETS as p (p.id)}
@@ -667,7 +704,7 @@
             </div>
           {/if}
 
-          <button type="button" class="done" onclick={() => (repeatOpen = false)}>확인</button>
+          <button type="button" class="done" onclick={closeAll}>확인</button>
         </div>
       {/if}
     </div>
