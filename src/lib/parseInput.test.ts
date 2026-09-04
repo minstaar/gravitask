@@ -86,6 +86,16 @@ const repeatCases: [input: string, title: string, due: string, cycle: string][] 
   // 날짜를 안 적으면 첫 회차가 없습니다. 그래도 규칙은 살아서, 입력칸의
   // 마감 칩이 기본값(오늘 끝)을 들고 있으므로 거기서 시작합니다.
   ['매주 스터디', '스터디', 'null', '매주'],
+
+  // 요일이 붙은 반복. 날짜 규칙이 읽지 못하는 형태라 반복이 요일까지 가져갑니다.
+  // 첫 회차는 입력칸이 마감 칩의 기본값을 규칙 위로 옮겨 잡습니다.
+  ['매주 월수금 알고리즘', '알고리즘', 'null', '매주 월·수·금'],
+  ['격주 화목 세미나', '세미나', 'null', '격주 화·목'],
+  ['매주 화 회의', '회의', 'null', '매주 화'],
+  ['격주 금 회식', '회식', 'null', '격주 금'],
+  ['화요일마다 물 주기', '물 주기', 'null', '매주 화'],
+  ['월수금요일마다 운동', '운동', 'null', '매주 월·수·금'],
+  ['매주 월화수목금 출석', '출석', 'null', '평일'],
 ];
 
 for (const [input, wantTitle, wantDue, wantCycle] of repeatCases) {
@@ -117,6 +127,23 @@ for (const input of ['논문 읽기 2주 뒤', '스터디 1주일 뒤', '제출 
   } else {
     fail++;
     console.log(`  FAIL 반복이 아닌데 규칙을 만들었다: ${input} → ${describeCycle(r.repeat)}`);
+  }
+}
+
+// 요일 하나를 온전히 적은 것은 날짜 규칙 몫으로 남겨 둡니다. 반복이 가로채면
+// 첫 회차를 정하는 일이 두 곳으로 갈라지고, 두 곳은 반드시 어긋납니다.
+for (const [input, wantDue] of [
+  ['매주 월요일 과제', '2026-08-17 23:59'],
+  ['격주 금요일 미팅', '2026-08-14 23:59'],
+] as const) {
+  const r = parseTaskInput(input, NOW);
+  if (fmt(r.due) === wantDue && r.repeat !== null) {
+    pass++;
+    console.log(`  ok   요일은 날짜가 읽는다: ${input} → ${wantDue}`);
+  } else {
+    fail++;
+    console.log(`  FAIL 요일은 날짜가 읽는다: ${input}`);
+    console.log(`         due: got ${fmt(r.due)}  want ${wantDue}  (반복 ${r.repeat ? '있음' : '없음'})`);
   }
 }
 

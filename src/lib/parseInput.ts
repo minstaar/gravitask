@@ -234,7 +234,47 @@ function matchDate(input: string, now: Date): Hit<Date> | null {
  * 그래서 여기서 정하는 것은 '얼마 간격인가'뿐이고, '언제부터인가'는 날짜
  * 규칙이 정합니다.
  */
+/** "월수금" → [1, 3, 5] */
+function weekdaysOf(run: string): number[] {
+  const out = [...run].map((c) => WEEKDAYS.indexOf(c)).filter((w) => w >= 0);
+  return [...new Set(out)].sort((a, b) => a - b);
+}
+
 const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'left'> }[] = [
+  /**
+   * 요일이 붙은 반복.
+   *
+   * 여기 있는 셋은 전부 '날짜 규칙이 읽지 못하는 요일'입니다. 그래서 요일까지
+   * 함께 떼어 규칙에 담습니다 — 남겨 봐야 아래에서 아무도 읽지 못하고 제목에
+   * 남습니다.
+   *
+   * "매주 월요일"처럼 요일 하나를 온전히 적은 경우는 일부러 뺐습니다. 그건
+   * 아래 날짜 규칙이 이미 읽을 줄 알고, 첫 회차를 정확히 다음 월요일로
+   * 잡아 줍니다. 여기서 가로채면 같은 일을 두 곳에서 하게 됩니다.
+   */
+  // "매주 월수금", "격주 화목", "매주 월화수목금" — 두 자 이상 이어 적은 요일
+  {
+    re: /(매주|격주)\s*([일월화수목금토]{2,7})(?:\s*요일)?/,
+    make: (m) => ({
+      unit: 'week',
+      every: m[1] === '격주' ? 2 : 1,
+      weekdays: weekdaysOf(m[2]),
+    }),
+  },
+  // "매주 화", "격주 금" — '요일'을 생략한 경우
+  {
+    re: /(매주|격주)\s*([일월화수목금토])(?!\s*요일)/,
+    make: (m) => ({
+      unit: 'week',
+      every: m[1] === '격주' ? 2 : 1,
+      weekdays: weekdaysOf(m[2]),
+    }),
+  },
+  // "화요일마다", "월수금요일마다"
+  {
+    re: /(?:매주\s*)?([일월화수목금토]{1,7})\s*요일\s*마다/,
+    make: (m) => ({ unit: 'week', every: 1, weekdays: weekdaysOf(m[1]) }),
+  },
   // 숫자가 붙은 쪽을 먼저 봅니다. "2주마다"가 "주마다"보다 앞서야 합니다.
   { re: /(\d+)\s*개?월\s*(?:마다|간격)/, make: (m) => ({ unit: 'month', every: +m[1] }) },
   { re: /(\d+)\s*주(?:일)?\s*(?:마다|간격)/, make: (m) => ({ unit: 'week', every: +m[1] }) },
