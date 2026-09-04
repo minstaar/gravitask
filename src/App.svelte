@@ -211,6 +211,20 @@
    */
   let chromeHeight = $state(150);
 
+  /**
+   * 마감·반복 줄이 실제로 차지하는 세로 자리. 없으면 0.
+   *
+   * margin까지 셉니다. 입력줄과의 간격을 gap이 아니라 이 상자의 margin으로
+   * 냈기 때문에(그래야 slide가 같이 줄입니다), margin을 빼먹으면 상자가
+   * 빠지는 순간 7px이 설명되지 않은 채 튑니다.
+   */
+  function revealSpace(root: HTMLElement): number {
+    const el = root.querySelector('.reveal');
+    if (!el) return 0;
+    const cs = getComputedStyle(el);
+    return el.getBoundingClientRect().height + (parseFloat(cs.marginTop) || 0);
+  }
+
   $effect(() => {
     if (!panel) return;
     const root = panel;
@@ -238,12 +252,11 @@
        * 의도한 상한보다 67px 커지지만, 그건 손을 대고 있는 잠깐이고
        * 눈금이 흔들리는 것과는 견줄 일이 아닙니다.
        */
-      const reveal = root.querySelector('.reveal');
       const gap =
         root.getBoundingClientRect().height -
         col.getBoundingClientRect().height -
         (editor?.getBoundingClientRect().height ?? 0) -
-        (reveal?.getBoundingClientRect().height ?? 0);
+        revealSpace(root);
       const next = Math.round(gap / (view.zoom || 1));
       if (Number.isFinite(next) && Math.abs(next - chromeHeight) > 1) chromeHeight = next;
     };
@@ -564,8 +577,7 @@
      * 남는 자리는 보이지 않습니다 — 창은 투명하고 패널은 위에 붙어 있어서,
      * 늘어난 만큼은 아래쪽 빈 공간이 됩니다.
      */
-    const revealEl = panel.querySelector('.reveal');
-    const revealNow = revealEl?.getBoundingClientRect().height ?? 0;
+    const revealNow = revealSpace(panel);
     const sliding = performance.now() < revealUntil;
     if (!sliding && revealNow > 0) revealFull = revealNow;
 
