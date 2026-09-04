@@ -14,9 +14,15 @@
  * 그래서 규칙만 카드에 붙여 두고, 완료할 때 그 카드를 다음 날짜로 굴립니다.
  * 레인에는 언제나 한 장이고, 끝을 안 정해도 됩니다.
  *
- * 대신 잃는 것도 있습니다 — 이번 주 회차만 따로 미루거나 지울 수 없습니다.
- * 그건 캘린더가 하는 일이고, 이 위젯이 답하는 질문("지금 뭐가 급한가")에는
- * 다음 회차 하나면 충분합니다.
+ * 회차 하나만 따로 다루는 일은 규칙이 제 기준을 기억하는 것으로 풉니다.
+ * 무슨 요일인지(weekdays), 며칠인지(monthDay), 몇 시인지(atMinutes)를 규칙이
+ * 쥐고 있으므로, 이번 회차의 마감을 옮겨도 다음 회차는 제자리로 돌아옵니다.
+ * 캘린더의 '이 일정만'이 여기서는 그냥 마감을 고치는 일입니다.
+ *
+ * 대신 회차마다 다른 제목을 달거나 영구 예외를 남기는 것은 못 합니다. 지난
+ * 회차가 행으로 존재하지 않아 예외를 걸어 둘 자리가 없습니다. 그건 캘린더가
+ * 하는 일이고, 이 위젯이 답하는 질문("지금 뭐가 급한가")에는 다음 회차
+ * 하나면 충분합니다.
  */
 
 export type RepeatUnit = 'day' | 'week' | 'month';
@@ -43,6 +49,21 @@ export interface Repeat {
    */
   monthDay?: number;
   /**
+   * 회차가 찾아오는 시각 (자정부터의 분).
+   *
+   * 요일·날짜와 같은 종류의 값입니다. 규칙이 "무슨 요일"과 "며칠"을 기억하는
+   * 것처럼 "몇 시"도 기억합니다.
+   *
+   * 기억하지 않으면 굴릴 때마다 현재 마감의 시각을 그대로 물고 갑니다. 그러면
+   * 이번 주 랩미팅만 2시에서 4시로 미뤘을 때 다음 주도, 그다음 주도 4시가
+   * 됩니다 — 날짜는 이번 회차만 옮겨지는데 시각만 영구히 바뀌어 앞뒤가
+   * 맞지 않습니다.
+   *
+   * 없으면 마감 시각을 따라갑니다. 이 값이 생기기 전에 저장된 규칙이 그대로
+   * 동작하는 자리이기도 합니다 — 처음 읽을 때 그때의 마감에서 채워집니다.
+   */
+  atMinutes?: number;
+  /**
    * 앞으로 남은 회차 수. 지금 화면에 있는 카드가 그중 하나입니다.
    * null이면 끝을 정하지 않은 것입니다.
    */
@@ -62,6 +83,18 @@ function addDays(t: number, n: number): number {
   return d.getTime();
 }
 
+/** 날짜는 그대로 두고 시각만 규칙이 기억한 값으로 맞춥니다 */
+function atTime(t: number, minutes: number): number {
+  const d = new Date(t);
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return d.getTime();
+}
+
+const minutesOf = (t: number): number => {
+  const d = new Date(t);
+  return d.getHours() * 60 + d.getMinutes();
+};
+
 /** 오름차순, 중복 없이. 비면 null */
 function cleanWeekdays(list: number[] | undefined): number[] | null {
   if (!list) return null;
@@ -79,36 +112,45 @@ function cleanWeekdays(list: number[] | undefined): number[] | null {
 export function normalizeRepeat(r: Repeat, due: number): Repeat {
   const every = Math.max(1, Math.round(r.every));
   const left = r.left === null ? null : Math.max(1, Math.round(r.left));
+  const atMinutes = r.atMinutes ?? minutesOf(due);
   const d = new Date(due);
 
   if (r.unit === 'week') {
-    return { unit: 'week', every, left, weekdays: cleanWeekdays(r.weekdays) ?? [d.getDay()] };
+    return {
+      unit: 'week',
+      every,
+      left,
+      atMinutes,
+      weekdays: cleanWeekdays(r.weekdays) ?? [d.getDay()],
+    };
   }
   if (r.unit === 'month') {
-    return { unit: 'month', every, left, monthDay: r.monthDay ?? d.getDate() };
+    return { unit: 'month', every, left, atMinutes, monthDay: r.monthDay ?? d.getDate() };
   }
-  return { unit: 'day', every, left };
+  return { unit: 'day', every, left, atMinutes };
 }
 
 /**
  * 바로 다음 회차.
  *
- * 시각은 그대로 옮겨 갑니다. 매주 월요일 23:59이던 것이 다음 주에 00:00이
- * 되면 그건 다른 마감입니다.
+ * 시각은 마감이 아니라 규칙에서 옵니다. 이번 회차만 2시에서 4시로 미뤘어도
+ * 다음 회차는 규칙이 기억하는 2시로 돌아옵니다 — 날짜가 그렇게 돌아오는
+ * 것과 같습니다.
  */
 export function nextOccurrence(due: number, r: Repeat): number {
   const rule = normalizeRepeat(r, due);
   const d = new Date(due);
+  const when = rule.atMinutes!;
 
-  if (rule.unit === 'day') return addDays(due, rule.every);
+  if (rule.unit === 'day') return atTime(addDays(due, rule.every), when);
 
   if (rule.unit === 'week') {
     const wds = rule.weekdays!;
     const cur = d.getDay();
     const later = wds.find((w) => w > cur);
     // 이번 주에 남은 요일이 있으면 거기로, 없으면 every주 뒤 그 주의 첫 요일로.
-    if (later !== undefined) return addDays(due, later - cur);
-    return addDays(due, 7 - cur + (rule.every - 1) * 7 + wds[0]);
+    const ahead = later !== undefined ? later - cur : 7 - cur + (rule.every - 1) * 7 + wds[0];
+    return atTime(addDays(due, ahead), when);
   }
 
   // 달을 넘길 때는 날짜가 있는 달로만 갑니다. 2월 31일은 없으므로 28(29)일로
@@ -117,9 +159,7 @@ export function nextOccurrence(due: number, r: Repeat): number {
   const y = d.getFullYear();
   const m = d.getMonth() + rule.every;
   const lastOfMonth = new Date(y, m + 1, 0).getDate();
-  const at = new Date(y, m, Math.min(day, lastOfMonth));
-  at.setHours(d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
-  return at.getTime();
+  return atTime(new Date(y, m, Math.min(day, lastOfMonth)).getTime(), when);
 }
 
 /**

@@ -149,6 +149,58 @@ check(
   show(sat)
 );
 
+/* ---- 시각은 규칙이 기억한다 ---- */
+//
+// 날짜가 이번 회차만 옮겨지는 것과 같아야 합니다. 이번 주 랩미팅만 2시에서
+// 4시로 미뤘는데 다음 주도 4시가 되면, 날짜는 이번만이고 시각만 영구히
+// 바뀌어 앞뒤가 맞지 않습니다.
+
+const at2pm = at(2026, 9, 7, 14, 0); // 월요일 오후 2시
+const weekly2pm = normalizeRepeat(rep({ unit: 'week', weekdays: [1] }), at2pm);
+check('규칙이 시각을 기억한다 (14:00 → 840분)', weekly2pm.atMinutes, 14 * 60);
+
+check(
+  '다음 회차는 규칙의 시각에 온다',
+  show(nextOccurrence(at2pm, weekly2pm)),
+  show(at(2026, 9, 14, 14, 0))
+);
+
+check(
+  '이번 회차만 4시로 미뤄도 다음은 2시로 돌아온다',
+  show(nextOccurrence(at(2026, 9, 7, 16, 0), weekly2pm)),
+  show(at(2026, 9, 14, 14, 0))
+);
+
+check(
+  '날짜와 시각을 함께 옮겨도 다음은 제자리 (수 14시 → 이번만 목 16시)',
+  show(
+    nextOccurrence(
+      at(2026, 9, 3, 16, 0),
+      normalizeRepeat(rep({ unit: 'week', weekdays: [3] }), at(2026, 9, 2, 14, 0))
+    )
+  ),
+  show(at(2026, 9, 9, 14, 0))
+);
+
+check(
+  '매월도 마찬가지',
+  show(
+    nextOccurrence(
+      at(2026, 9, 5, 20, 0),
+      normalizeRepeat(rep({ unit: 'month' }), at(2026, 9, 1, 9, 0))
+    )
+  ),
+  show(at(2026, 10, 1, 9, 0))
+);
+
+// 이 값이 생기기 전에 저장된 규칙은 시각을 안 들고 있습니다. 처음 읽을 때
+// 그때의 마감에서 채워지므로, 예전과 똑같이 동작해야 합니다.
+check(
+  '옛 규칙(시각 없음)은 마감 시각을 따라간다',
+  show(nextOccurrence(at2pm, rep({ unit: 'week', weekdays: [1] }))),
+  show(at(2026, 9, 14, 14, 0))
+);
+
 /* ---- 굴리기 ---- */
 
 const NOW = at(2026, 9, 3, 12, 0);
