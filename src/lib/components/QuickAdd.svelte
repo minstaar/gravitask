@@ -101,6 +101,8 @@
 
   const parsed = $derived(parseTaskInput(text, new Date(now)));
   const ready = $derived(editing ? text.trim().length > 0 : parsed.title.length > 0);
+  /** 적기는 적었는데 규칙이 전부 가져가서 이름이 남지 않은 상태 */
+  const needsTitle = $derived(!editing && text.trim().length > 0 && parsed.title.length === 0);
   const selected = $derived(categories.find((c) => c.id === categoryId) ?? categories[0]);
 
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -143,6 +145,22 @@
    * 날짜를 방금 골랐으면 그 날짜를 그대로 써야 합니다.
    */
   let touched = $state<'date' | 'rule' | null>(null);
+
+  /**
+   * 지금 켜진 요일이 '고른 것'이 아니라 '짐작한 것'인가.
+   *
+   * '매주'를 누르면 규칙에 요일이 하나 필요하므로 첫 회차의 요일을 넣어 둡니다.
+   * 그런데 그건 사용자가 고른 값이 아니라 자리를 채운 값입니다. 그걸 고른
+   * 것과 똑같이 다루면, 일요일에 '매주'를 누르고 '월'을 고른 사람이 일·월
+   * 반복을 얻습니다 — 누른 적 없는 일요일이 따라옵니다.
+   *
+   * 그래서 짐작한 값 위에 처음 누르는 요일은 '더하기'가 아니라 '그것만'입니다.
+   * 한 번 고른 뒤부터는 평범한 켜기/끄기입니다.
+   *
+   * 손으로 적어 넣은 요일("매주 월수금")은 짐작이 아닙니다. 그건 사용자가
+   * 적은 값이라, 거기에 화요일을 더하려는 사람의 뜻을 지우면 안 됩니다.
+   */
+  let guessedWeekday = $state(false);
 
   /**
    * 첫 회차.
@@ -192,10 +210,18 @@
     // 주기를 바꿔도 횟수는 유지합니다. 바꾸는 것은 '얼마 간격인가'뿐이고,
     // '몇 번인가'는 따로 고른 값이라 같이 지워지면 다시 골라야 합니다.
     setRepeat({ ...preset.make(dueAt.getTime()), left: repeat?.left ?? null });
+    guessedWeekday = preset.weekly;
   }
 
   function toggleWeekday(w: number) {
     if (!repeat || repeat.unit !== 'week') return;
+
+    if (guessedWeekday) {
+      setRepeat({ ...repeat, weekdays: [w] });
+      guessedWeekday = false;
+      return;
+    }
+
     const on = new Set(chosenWeekdays);
     if (on.has(w)) on.delete(w);
     else on.add(w);
@@ -352,6 +378,7 @@
     overrideTime = '';
     overrideRepeat = null;
     touched = null;
+    guessedWeekday = false;
     countText = '';
     monthAnchor = null;
     closeAll();
@@ -384,6 +411,7 @@
       // 실어 오는 것은 이미 정해진 값이라 누가 이길 일이 없습니다. 손대는
       // 쪽이 생길 때부터 따집니다.
       touched = null;
+    guessedWeekday = false;
       countText = '';
       categoryId = t.categoryId;
       closeAll();
@@ -539,7 +567,7 @@
                 <button
                   type="button"
                   class="day"
-                  class:sel={toDate(cell) === dateValue}
+                  class:sel={toDate(cell) === toDate(firstDue)}
                   class:today={toDate(cell) === todayKey}
                   onclick={() => pickDate(cell)}
                 >
@@ -736,7 +764,15 @@
       {/if}
     </div>
 
-    {#if parsed.dateText || parsed.timeText || parsed.repeatText}
+    <!--
+      규칙이 문장을 통째로 먹으면 제목이 남지 않습니다. "매주 월요일"만 적으면
+      마감도 반복도 제대로 잡히고 칩까지 채워지는데 추가 버튼만 조용히
+      죽어 있어서, 눌러도 카드가 안 생기는 것처럼 보였습니다. 무엇이 모자란지
+      읽은 자리에 그대로 적습니다.
+    -->
+    {#if needsTitle}
+      <span class="hint warn">할 일 이름을 함께 적어 주세요</span>
+    {:else if parsed.dateText || parsed.timeText || parsed.repeatText}
       <span class="hint">
         “{[parsed.repeatText, parsed.dateText, parsed.timeText].filter(Boolean).join(' ')}”에서 읽음
       </span>
@@ -1099,6 +1135,10 @@
   .own input::-webkit-inner-spin-button {
     appearance: none;
     margin: 0;
+  }
+
+  .hint.warn {
+    color: rgba(255, 190, 120, 0.85);
   }
 
   .note {
