@@ -101,12 +101,27 @@
     overdue ? stripePattern(visual.color) : withAlpha(visual.color, visual.fillAlpha)
   );
 
-  // 저장소 왕복을 기다리지 않고 체크 표시를 먼저 채웁니다.
-  // 클릭이 즉시 반응해야 완료가 보상처럼 느껴집니다.
-  let justDone = $state(false);
+  /**
+   * 저장소 왕복을 기다리지 않고 체크 표시를 먼저 채웁니다.
+   * 클릭이 즉시 반응해야 완료가 보상처럼 느껴집니다.
+   *
+   * '눌렸다'가 아니라 '어느 회차를 눌렀나'를 담습니다. 반복은 완료해도
+   * 카드가 사라지지 않고 같은 줄이 다음 회차로 굴러가므로, 참/거짓만
+   * 들고 있으면 새 회차가 채워진 체크로 나타납니다. 마감이 바뀌는
+   * 순간 이 값은 저절로 옛 회차를 가리키고 표시가 비워집니다.
+   */
+  let doneDue = $state<number | null>(null);
+  const justDone = $derived(doneDue === task.due);
+
+  // 굴러간 뒤에는 기억을 버립니다. Ctrl+Z로 이번 회차가 되돌아오면 마감도
+  // 원래 값으로 돌아오는데, 누른 회차를 그대로 들고 있으면 되살아난 카드가
+  // 다시 완료된 것처럼 보입니다.
+  $effect(() => {
+    if (!justDone) doneDue = null;
+  });
 
   function complete() {
-    justDone = true;
+    doneDue = task.due;
     onToggle(task);
   }
 
