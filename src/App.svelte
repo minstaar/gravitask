@@ -50,12 +50,15 @@
   /**
    * 새 할 일을 담을 주제.
    *
-   * 처음 값은 씨앗 주제('study')입니다. 저장된 주제 목록은 파일에서 읽어
-   * 오므로 이 줄이 도는 시점에는 아직 없습니다. 그래서 목록이 도착한 뒤에도
-   * 이 값이 씨앗을 가리킨 채 남아 있을 수 있는데, 그 주제를 지운 사람에게는
-   * 아무 데도 없는 id입니다.
+   * 이 줄이 도는 시점에는 저장된 주제 목록이 아직 없습니다 — 파일에서 읽어
+   * 오니까요. 그래서 여기 잡히는 값은 씨앗 주제의 id이고, 그 주제를 지운
+   * 사람에게는 아무 데도 없는 id입니다. 아래 effect가 목록이 도착하는 순간
+   * 바로잡습니다.
+   *
+   * 씨앗 id를 글자로 적어 두지 않습니다. 적어 두면 그 문자열이 진실인 척
+   * 하기 시작하고, 그게 이 버그의 뿌리였습니다.
    */
-  let categoryId = $state(store.categories[0]?.id ?? 'study');
+  let categoryId = $state(store.categories[0].id);
 
   // 없어진 주제를 가리키고 있으면 첫 주제로 데려옵니다. 목록이 도착하는
   // 순간과 주제를 지우는 순간, 두 번 다 여기서 걸립니다.
@@ -734,16 +737,22 @@
     // 않으면 안내가 아니라 혼란입니다.
     const zoomKey = isMac ? '⌘' : 'Ctrl';
 
+    // 예시는 '지금 있는 주제'에 넣습니다. 예전에는 씨앗 주제의 id를 글자로
+    // 적어 뒀는데, 그러면 그 주제를 지운 사람에게 예시 카드가 없는 주제로
+    // 들어가 화면에 안 뜹니다 — 처음 켠 사람에게 빈 위젯을 보여 주는 셈입니다.
+    const first = store.categories[0].id;
+    const second = store.categories[1]?.id ?? first;
+
     const demo: NewTask[] = [
       // 아래 둘은 그 구역에 실제로 서야 문구가 참이 됩니다.
-      { title: '기한 만료 구역', due: now - 4 * MS_HOUR, categoryId: 'life' },
-      { title: '24시간 안쪽 구역', due: now + 3 * MS_HOUR, categoryId: 'study' },
+      { title: '기한 만료 구역', due: now - 4 * MS_HOUR, categoryId: second },
+      { title: '24시간 안쪽 구역', due: now + 3 * MS_HOUR, categoryId: first },
       // 이 카드가 나머지를 치우는 도구입니다. 쓰이면서 자기도 사라집니다.
-      { title: '우클릭으로 수정,삭제', due: now + 48 * MS_HOUR, categoryId: 'study' },
-      { title: '버튼을 클릭해서 완료', due: now + 144 * MS_HOUR, categoryId: 'life' },
-      { title: '설정에서 주제 편집', due: now + 216 * MS_HOUR, categoryId: 'study' },
-      { title: '외부 캘린더 연동 가능', due: now + 384 * MS_HOUR, categoryId: 'life' },
-      { title: `크기 조절 ${zoomKey}+휠`, due: now + 624 * MS_HOUR, categoryId: 'study' },
+      { title: '우클릭으로 수정,삭제', due: now + 48 * MS_HOUR, categoryId: first },
+      { title: '버튼을 클릭해서 완료', due: now + 144 * MS_HOUR, categoryId: second },
+      { title: '설정에서 주제 편집', due: now + 216 * MS_HOUR, categoryId: first },
+      { title: '외부 캘린더 연동 가능', due: now + 384 * MS_HOUR, categoryId: second },
+      { title: `크기 조절 ${zoomKey}+휠`, due: now + 624 * MS_HOUR, categoryId: first },
     ];
     for (const t of demo) await addTask(t);
   }

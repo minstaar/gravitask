@@ -29,6 +29,18 @@ const SEED_KEY = 'reminder-widget:seeded';
 const ZOOM_KEY = 'reminder-widget:zoom:v1';
 const PER_PAGE_KEY = 'reminder-widget:perPage:v1';
 
+/**
+ * 저장된 주제가 아직 없을 때 쓰는 목록.
+ *
+ * id는 고정입니다. 난수로 바꾸면 새로 켤 때마다 다른 id가 나와서, 파일을
+ * 읽기 전에 만들어진 할 일이 매번 없는 주제를 가리키게 됩니다. 한 번만
+ * 만들어 저장하는 길도 있지만 그건 '첫 실행'이라는 상태를 하나 더 만드는
+ * 일이고, 이미 이 id를 들고 있는 사용자들의 데이터도 옮겨야 합니다.
+ *
+ * 고정 id 자체는 문제가 아니었습니다. 문제는 이 id를 다른 곳에서 글자로
+ * 베껴 적고 그것을 진실로 믿은 쪽이었습니다. 그래서 베낀 자리를 없앴고,
+ * 여기만 남습니다.
+ */
 const SEED: Category[] = [
   { id: 'study', name: '업무', order: 0 },
   { id: 'life', name: '생활', order: 1 },
