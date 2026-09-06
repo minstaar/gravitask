@@ -47,7 +47,22 @@
   const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   const PAD = inTauri ? 12 : 32;
 
+  /**
+   * 새 할 일을 담을 주제.
+   *
+   * 처음 값은 씨앗 주제('study')입니다. 저장된 주제 목록은 파일에서 읽어
+   * 오므로 이 줄이 도는 시점에는 아직 없습니다. 그래서 목록이 도착한 뒤에도
+   * 이 값이 씨앗을 가리킨 채 남아 있을 수 있는데, 그 주제를 지운 사람에게는
+   * 아무 데도 없는 id입니다.
+   */
   let categoryId = $state(store.categories[0]?.id ?? 'study');
+
+  // 없어진 주제를 가리키고 있으면 첫 주제로 데려옵니다. 목록이 도착하는
+  // 순간과 주제를 지우는 순간, 두 번 다 여기서 걸립니다.
+  $effect(() => {
+    const list = store.categories;
+    if (list.length > 0 && !list.some((c) => c.id === categoryId)) categoryId = list[0].id;
+  });
   let quickAdd: QuickAdd | undefined = $state();
   let reducedMotion = $state(false);
   let panel: HTMLElement | undefined = $state();

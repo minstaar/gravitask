@@ -105,6 +105,19 @@
   const needsTitle = $derived(!editing && text.trim().length > 0 && parsed.title.length === 0);
   const selected = $derived(categories.find((c) => c.id === categoryId) ?? categories[0]);
 
+  /**
+   * 저장할 주제. 화면에 보이는 그 주제입니다.
+   *
+   * 예전에는 `categoryId`를 그대로 넘겼는데, 그 값이 없어진 주제를 가리키고
+   * 있어도 칩은 `?? categories[0]` 덕에 멀쩡한 이름을 보여 줬습니다. 그래서
+   * 사용자는 "학업"이라 적힌 칩을 보며 저장했는데 할 일에는 사라진 주제의
+   * id가 박혔습니다. 레인은 있는 주제만 훑으므로 그 카드는 어디에도 안
+   * 뜹니다 — 저장은 됐는데 화면에는 없는, 가장 알아채기 어려운 모양입니다.
+   *
+   * 보이는 것과 저장되는 것이 같은 값이면 이 어긋남이 생길 자리가 없습니다.
+   */
+  const saveTo = $derived(selected?.id ?? categoryId);
+
   const pad = (n: number) => String(n).padStart(2, '0');
   const toDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const toTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -431,11 +444,11 @@
       onEdit(editing.id, {
         title: text.trim(),
         due: firstDue.getTime(),
-        categoryId,
+        categoryId: saveTo,
         repeat: repeatToSave,
       });
     } else {
-      onAdd({ title: parsed.title, due: firstDue.getTime(), categoryId, repeat: repeatToSave });
+      onAdd({ title: parsed.title, due: firstDue.getTime(), categoryId: saveTo, repeat: repeatToSave });
     }
     reset();
     input?.focus();

@@ -1,5 +1,6 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { forgetTask } from './notify';
+import { logWarn } from './log';
 import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './overlay';
 import {
   CALENDAR_CACHE_FILE,
@@ -376,9 +377,36 @@ async function drainCompleted(): Promise<void> {
  * 우리가 소유한 소스는 완료한 항목이 이미 목록에서 빠져 있습니다. 남의 소스는
  * 피드가 매번 전부를 돌려주므로, 완료 표시를 보고 여기서 걸러냅니다.
  */
+/**
+ * 주제가 사라진 할 일을 첫 주제로 데려옵니다.
+ *
+ * 레인은 있는 주제만 훑습니다. 그래서 없는 주제를 가리키는 할 일은 파일에
+ * 멀쩡히 있으면서도 화면 어디에도 안 나오고, 사용자는 그것이 저장되지
+ * 않았다고 생각합니다. 지워진 것도 아니어서 되찾을 방법도 없습니다.
+ *
+ * 저장된 목록을 실제로 읽어 왔을 때만 손댑니다. 읽기가 실패하면 씨앗 목록이
+ * 그대로 남는데, 그걸 기준으로 미아를 가리면 멀쩡한 할 일을 전부 엉뚱한
+ * 주제로 옮겨 버립니다.
+ */
+async function adoptOrphans(loaded: boolean): Promise<boolean> {
+  if (!loaded) return false;
+  const home = store.categories[0]?.id;
+  if (!home) return false;
+
+  const known = new Set(store.categories.map((c) => c.id));
+  const lost = (await source.list()).filter((t) => !known.has(t.categoryId));
+  if (lost.length === 0) return false;
+
+  for (const t of lost) await source.update?.(t.id, { categoryId: home });
+  logWarn(`주제가 없어진 할 일 ${lost.length}건을 '${store.categories[0].name}'으로 데려왔습니다`);
+  return true;
+}
+
 export async function refresh(): Promise<void> {
   const saved = await readJson<Category[]>(CAT_KEY);
-  if (saved && saved.length > 0) store.categories = saved;
+  const loaded = Boolean(saved && saved.length > 0);
+  if (loaded) store.categories = saved!;
+  await adoptOrphans(loaded);
 
   const overlay = await loadOverlay();
   const lists = await Promise.all(
