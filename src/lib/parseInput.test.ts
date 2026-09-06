@@ -96,6 +96,16 @@ const repeatCases: [input: string, title: string, due: string, cycle: string][] 
   ['화요일마다 물 주기', '물 주기', 'null', '매주 화'],
   ['월수금요일마다 운동', '운동', 'null', '매주 월·수·금'],
   ['매주 월화수목금 출석', '출석', 'null', '평일'],
+
+  // 나눠 적은 요일. 쉼표나 '과'로 끊어 적는 사람이 붙여 적는 사람만큼 많은데,
+  // 붙여 적은 것만 읽던 때는 첫 요일만 규칙에 담기고 나머지가 제목에 남았습니다
+  // — "매주 월, 수, 금 운동"이 월요일 반복 ", 수, 금 운동"이 됐습니다.
+  ['매주 월, 수, 금 운동', '운동', 'null', '매주 월·수·금'],
+  ['매주 월/수/금 헬스', '헬스', 'null', '매주 월·수·금'],
+  ['격주 화, 목 스터디', '스터디', 'null', '격주 화·목'],
+  // '요일'을 붙여 나열한 것. 글자만 훑으면 '요일'의 '일'이 일요일로 잡힙니다.
+  ['매주 수요일과 금요일 회의', '회의', 'null', '매주 수·금'],
+  ['매주 화요일과 목요일 상담', '상담', 'null', '매주 화·목'],
 ];
 
 for (const [input, wantTitle, wantDue, wantCycle] of repeatCases) {
@@ -163,6 +173,55 @@ for (const [input, wantDue] of [
     console.log(`  FAIL 평일 첫 회차`);
     console.log(`         맞추기 전: ${fmt(new Date(raw))}  (want 2026-08-15 10:00)`);
     console.log(`         맞춘 뒤:   ${fmt(new Date(aligned))}  (want 2026-08-17 10:00)`);
+  }
+}
+
+// 띄우기만 한 것은 요일 나열이 아닙니다. "매주 월요일 화상회의"의 '화'는
+// 회의 이름의 첫 글자지 화요일이 아닙니다.
+for (const [input, wantTitle, wantCycle] of [
+  ['매주 월요일 화상회의', '화상회의', '매주 월'],
+  ['매주 수요일 목공 수업', '목공 수업', '매주 수'],
+] as [string, string, string][]) {
+  const r = parseTaskInput(input, NOW);
+  const got = r.repeat ? describeCycle(r.repeat, r.due?.getTime()) : 'null';
+  if (r.title === wantTitle && got === wantCycle) {
+    pass++;
+    console.log(`  ok   띄운 것은 나열이 아니다: ${input} → ${got}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${input}: 제목 "${r.title}"(want "${wantTitle}") 반복 ${got}(want ${wantCycle})`);
+  }
+}
+
+// '반'은 뒤에 한글이 붙으면 30분이 아닙니다. "2시 반복 확인"의 '반'은 제목입니다.
+for (const [input, wantTitle, wantDue] of [
+  ['2시 반복 확인', '반복 확인', '2026-08-14 14:00'],
+  ['2시 반 회의', '회의', '2026-08-14 14:30'],
+  ['2시 반에 회의', '회의', '2026-08-14 14:30'],
+  ['3시 반납하기', '반납하기', '2026-08-14 15:00'],
+] as [string, string, string][]) {
+  const r = parseTaskInput(input, NOW);
+  if (r.title === wantTitle && fmt(r.due) === wantDue) {
+    pass++;
+    console.log(`  ok   ${input.padEnd(16)} → "${r.title}" ${fmt(r.due)}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${input}: "${r.title}"(want "${wantTitle}") ${fmt(r.due)}(want ${wantDue})`);
+  }
+}
+
+// 날짜를 떼고 남은 조사가 제목의 첫 글자가 되면 안 됩니다.
+for (const [input, wantTitle] of [
+  ['내일부터 매일 운동', '운동'],
+  ['오늘 에너지 음료 사기', '에너지 음료 사기'],
+] as [string, string][]) {
+  const r = parseTaskInput(input, NOW);
+  if (r.title === wantTitle) {
+    pass++;
+    console.log(`  ok   조사 정리: ${input} → "${r.title}"`);
+  } else {
+    fail++;
+    console.log(`  FAIL 조사 정리: ${input} → "${r.title}" (want "${wantTitle}")`);
   }
 }
 

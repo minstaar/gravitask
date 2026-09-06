@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 한국어 한 줄 입력 파서.
  *
  * "확률론 과제 내일 오후 6시" → { title: "확률론 과제", due: <내일 18:00> }
@@ -31,6 +31,54 @@ interface Hit<T> {
   text: string;
   start: number;
   end: number;
+}
+
+/* ---------- 낱말 경계 ---------- */
+
+/**
+ * 규칙 뒤에 붙어도 되는 조사.
+ *
+ * 조사 자체도 낱말이 끝나는 자리에 있어야 합니다 — 그러지 않으면 "매일경제"의
+ * '경'이 '경(무렵)'으로 통과합니다.
+ */
+const JOSA = /^\s*(?:부터|까지|에서|에|으로|로|쯤|경|중|께|사이|안)(?![가-힣])/;
+
+/**
+ * 규칙은 낱말 경계에서만 성립합니다.
+ *
+ * 예전에는 규칙이 문장 어디든 걸리기만 하면 이겼습니다. 그래서 "매일경제
+ * 읽기"가 매일 반복 "경제 읽기"가 되고, "내일신문 구독"이 내일 마감 "신문
+ * 구독"이 되고, "3시험 범위"가 오후 3시 "험 범위"가 됐습니다. 한글은 낱말을
+ * 띄어 쓰지 않고 붙여 쓰는 일이 잦아, 경계를 안 보면 규칙이 남의 낱말
+ * 한가운데를 물어뜯습니다.
+ *
+ * 앞은 무조건 막습니다 — 한글이 이어져 있으면 그 낱말의 일부입니다.
+ * 뒤는 조사만 허용합니다 — "내일까지", "3시에", "다음주부터"는 정상입니다.
+ */
+function atWordBoundary(input: string, start: number, end: number): boolean {
+  // 규칙 여러 개가 양끝에 \s*를 달고 있어, 걸린 자리가 공백에서 시작하거나
+  // 공백으로 끝납니다. 경계는 실제 글자가 있는 자리에서 봐야 합니다 —
+  // 그러지 않으면 "수업 준비 9시"의 매치가 '비' 뒤 공백에서 시작한 것으로
+  // 보여 낱말 한가운데로 오해받습니다.
+  const text = input.slice(start, end);
+  const from = start + (text.length - text.trimStart().length);
+  const to = end - (text.length - text.trimEnd().length);
+  if (from > 0 && /[가-힣]/.test(input[from - 1])) return false;
+  const after = input.slice(to);
+  return !/^[가-힣]/.test(after) || JOSA.test(after);
+}
+
+/**
+ * 규칙 하나를 문장 전체에서 훑습니다. 낱말 한가운데에 걸린 것은 건너뛰고
+ * 다음 자리를 봅니다 — 규칙을 통째로 버리면 "3시험 범위 3시에"의 뒤쪽
+ * 시각까지 같이 잃습니다.
+ */
+function scan(input: string, re: RegExp): RegExpMatchArray | null {
+  const g = re.flags.includes('g') ? re : new RegExp(re.source, re.flags + 'g');
+  for (const m of input.matchAll(g)) {
+    if (atWordBoundary(input, m.index, m.index + m[0].length)) return m;
+  }
+  return null;
 }
 
 /* ---------- 날짜 유틸 ---------- */
@@ -210,15 +258,28 @@ const DATE_RULES: DateRule[] = [
   { re: /(?<![\d:/.\-])(\d{1,2})\s*일(?!\s*(?:뒤|후|있다가))/, make: (m, n) => resolveDayOfMonth(n, +m[1]) },
 ];
 
+/**
+ * 날짜 하나를 고릅니다.
+ *
+ * 여러 규칙이 걸리면 **문장에서 먼저 나온 것**이 이깁니다. 예전에는 표에
+ * 적힌 순서가 이겼는데, 그건 사람이 읽는 순서와 아무 상관이 없습니다 —
+ * "내일 3시 아니면 모레 발표"에서 '모레'가 '내일'보다 표 위에 있다는 이유로
+ * 모레가 뽑히고 '내일'은 제목에 남았습니다.
+ *
+ * 같은 자리에서 시작하는 규칙끼리는 표 순서가 이깁니다. 그 순서는 구체적인
+ * 것을 앞에 둔 것이라("3일 뒤"가 "3일"보다 앞) 여전히 필요합니다.
+ */
 function matchDate(input: string, now: Date): Hit<Date> | null {
+  let best: Hit<Date> | null = null;
   for (const rule of DATE_RULES) {
-    const m = input.match(rule.re);
+    const m = scan(input, rule.re);
     if (!m || m.index === undefined) continue;
     const value = rule.make(m, now);
     if (!value) continue; // 유효하지 않은 날짜면 이 규칙은 없던 걸로
-    return { value, text: m[0], start: m.index, end: m.index + m[0].length };
+    if (best && best.start <= m.index) continue;
+    best = { value, text: m[0], start: m.index, end: m.index + m[0].length };
   }
-  return null;
+  return best;
 }
 
 /* ---------- 반복 매칭 ---------- */
@@ -234,11 +295,31 @@ function matchDate(input: string, now: Date): Hit<Date> | null {
  * 그래서 여기서 정하는 것은 '얼마 간격인가'뿐이고, '언제부터인가'는 날짜
  * 규칙이 정합니다.
  */
-/** "월수금" → [1, 3, 5] */
+/**
+ * "월수금" → [1, 3, 5]
+ *
+ * '요일'을 먼저 뗍니다. "수요일과 금요일"을 글자만 훑으면 '요일'의 '일'이
+ * 일요일로 잡혀, 고르지도 않은 일요일이 규칙에 끼어듭니다.
+ */
 function weekdaysOf(run: string): number[] {
-  const out = [...run].map((c) => WEEKDAYS.indexOf(c)).filter((w) => w >= 0);
+  const out = [...run.replace(/요일/g, ' ')]
+    .map((c) => WEEKDAYS.indexOf(c))
+    .filter((w) => w >= 0);
   return [...new Set(out)].sort((a, b) => a - b);
 }
+
+/**
+ * 나눠 적은 요일 하나. "월" 또는 "월요일".
+ *
+ * 맨 글자로 적은 쪽은 뒤에 한글이 붙으면 안 됩니다. "매주 월요일 화상회의"의
+ * '화'가 요일로 읽히면 안 되기 때문입니다 — 그건 회의 이름의 첫 글자입니다.
+ */
+const WD_ITEM = /[일월화수목금토]요일|[일월화수목금토](?![가-힣])/.source;
+/** "월, 수, 금" / "수요일과 금요일"을 잇는 말. 구분자 없이 띄우기만 한 것은 뺍니다 */
+const WD_SEP = /\s*(?:[,·/]|과|와|및|이랑|랑)\s*/.source;
+/** "매주"·"격주" 뒤의 공백까지 */
+const CYCLE_HEAD = /(매주|격주)\s*/.source;
+const WD_LIST = `(?:${WD_ITEM})(?:${WD_SEP}(?:${WD_ITEM}))+`;
 
 const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'left'> }[] = [
   /**
@@ -255,6 +336,18 @@ const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'l
   // "매주 월수금", "격주 화목", "매주 월화수목금" — 두 자 이상 이어 적은 요일
   {
     re: /(매주|격주)\s*([일월화수목금토]{2,7})(?:\s*요일)?/,
+    make: (m) => ({
+      unit: 'week',
+      every: m[1] === '격주' ? 2 : 1,
+      weekdays: weekdaysOf(m[2]),
+    }),
+  },
+  // "매주 월, 수, 금", "격주 수요일과 금요일" — 쉼표나 '과'로 나눠 적은 요일
+  //
+  // 붙여 쓴 "월수금"과 갈라 둔 것은, 띄우기만 한 "매주 월요일 화상회의"를
+  // 요일 나열로 오해하지 않기 위해서입니다. 여기서는 구분자를 반드시 요구합니다.
+  {
+    re: new RegExp(`${CYCLE_HEAD}(${WD_LIST})`),
     make: (m) => ({
       unit: 'week',
       every: m[1] === '격주' ? 2 : 1,
@@ -294,7 +387,7 @@ const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'l
 
 function matchRepeat(input: string): Hit<Omit<Repeat, 'left'>> | null {
   for (const rule of REPEAT_RULES) {
-    const m = input.match(rule.re);
+    const m = scan(input, rule.re);
     if (!m || m.index === undefined) continue;
     return { value: rule.make(m), text: m[0], start: m.index, end: m.index + m[0].length };
   }
@@ -319,13 +412,13 @@ function disambiguateHour(h: number): number {
 }
 
 function matchTime(input: string): Hit<TimeOfDay> | null {
-  const noon = input.match(/자정|정오/);
+  const noon = scan(input, /자정|정오/);
   if (noon && noon.index !== undefined) {
     const value = noon[0] === '자정' ? { h: 0, m: 0 } : { h: 12, m: 0 };
     return { value, text: noon[0], start: noon.index, end: noon.index + noon[0].length };
   }
 
-  const colon = input.match(/(?<!\d)(\d{1,2}):(\d{2})(?!\d)/);
+  const colon = scan(input, /(?<!\d)(\d{1,2}):(\d{2})(?!\d)/);
   if (colon && colon.index !== undefined) {
     const h = +colon[1];
     const m = +colon[2];
@@ -334,8 +427,11 @@ function matchTime(input: string): Hit<TimeOfDay> | null {
     }
   }
 
-  const kr = input.match(
-    /(오전|오후|아침|저녁|밤|새벽)?\s*(\d{1,2})\s*시\s*(?:(반)|(\d{1,2})\s*분)?/
+  const kr = scan(
+    input,
+    // '반'은 뒤에 한글이 붙으면 30분이 아닙니다 — "2시 반복 확인"의 '반'은
+    // 제목의 첫 글자입니다. 다만 조사는 붙을 수 있어 그것만 허용합니다.
+    /(오전|오후|아침|저녁|밤|새벽)?\s*(\d{1,2})\s*시\s*(?:(반)(?=[^가-힣]|에|까지|쯤|경|부터|$)|(\d{1,2})\s*분)?/
   );
   if (kr && kr.index !== undefined) {
     const meridiem = kr[1];
@@ -359,9 +455,21 @@ function matchTime(input: string): Hit<TimeOfDay> | null {
 
 /* ---------- 조립 ---------- */
 
+/**
+ * 걸린 조각을 떼어냅니다. 거기 붙어 있던 조사도 같이 뗍니다.
+ *
+ * 조사만 남으면 제목의 첫 글자가 됩니다 — "9월 10일까지 보고서"가 "까지
+ * 보고서"가 되고 "내일로 미룬 청소"가 "로 미룬 청소"가 됐습니다. 예전에는
+ * 문장 끝의 '까지'만 따로 지웠는데, 날짜가 앞에 오면 조사도 앞에 남으므로
+ * 그 자리에서 떼는 편이 맞습니다.
+ *
+ * 조사 목록은 경계 판정에 쓰는 것과 같은 것입니다. 뒤에 붙어도 되는 말과
+ * 떼어내야 하는 말이 같은 목록이어야, 통과시켜 놓고 안 지우는 일이 없습니다.
+ */
 function cut(input: string, hit: Hit<unknown> | null): string {
   if (!hit) return input;
-  return input.slice(0, hit.start) + ' ' + input.slice(hit.end);
+  const tail = input.slice(hit.end).replace(/^\s*/, (sp) => sp).replace(JOSA, '');
+  return input.slice(0, hit.start) + ' ' + tail;
 }
 
 /**
