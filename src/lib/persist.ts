@@ -37,6 +37,8 @@ export const ARCHIVE_FILE = 'gravitask-archive.json';
  */
 export const CALENDAR_CACHE_FILE = 'gravitask-calendar-cache.json';
 
+import { logError, logWarn, reasonOf } from './log';
+
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 type TauriStore = {
@@ -70,13 +72,39 @@ function openStore(file: string): Promise<TauriStore> {
   return p;
 }
 
+/**
+ * 답이 없는 것도 실패로 칩니다.
+ *
+ * 거절은 누군가 받을 수 있지만, 영원히 끝나지 않는 약속은 아무도 못 받습니다.
+ * 그 상태가 이 앱에서 가장 고약한 모양입니다 — 저장이 멎으면 LocalSource가
+ * 메모리를 갱신하지 못해 카드가 안 생기고, 오류가 없으니 화면에 띄울 것도
+ * 없고, 다음 저장도 같은 자리에서 멎습니다. 사용자에게는 "눌렀는데 아무 일도
+ * 안 일어남"으로만 보입니다.
+ *
+ * 노트북을 덮었다 여는 사이에 백엔드로 가는 길이 한 번 엉키면 이렇게 됩니다.
+ * 기다림에 끝을 두면 그 다음부터는 평범한 실패라, 저장소를 다시 열어 보고
+ * 그래도 안 되면 화면에 말할 수 있습니다.
+ */
+const WRITE_TIMEOUT_MS = 5000;
+
+function withDeadline<T>(work: Promise<T>, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${what}이(가) ${WRITE_TIMEOUT_MS}ms 안에 응답하지 않았습니다`)),
+      WRITE_TIMEOUT_MS
+    );
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
 /** 한 번 쓰기. 실패하면 그대로 던집니다 */
 async function put(key: string, value: unknown, file: string): Promise<void> {
-  const store = await openStore(file);
-  await store.set(key, value);
+  const store = await withDeadline(openStore(file), `${file} 열기`);
+  await withDeadline(store.set(key, value), `${file} 쓰기`);
   // autoSave를 끄고 매번 명시적으로 씁니다. 할 일 하나를 체크하고 바로
   // 컴퓨터를 끄더라도 그 변경이 디스크에 남아 있어야 합니다.
-  await store.save();
+  await withDeadline(store.save(), `${file} 저장`);
 }
 
 export async function readJson<T>(key: string, file = MAIN_FILE): Promise<T | null> {
@@ -111,9 +139,18 @@ export async function writeJson(key: string, value: unknown, file = MAIN_FILE): 
     // 열어 둔 저장소가 상해 있을 수 있습니다. 버리고 새로 열어 한 번 더
     // 해 봅니다. 두 번째도 실패하면 그대로 던집니다 — 저장이 안 됐다는
     // 사실이 조용히 묻히는 것이 이 앱에서 가장 나쁜 결과입니다.
-    console.warn('저장에 실패해 저장소를 다시 열고 재시도합니다:', err);
+    logWarn(`저장 실패 — 저장소를 다시 열고 재시도합니다 (${file}/${key}): ${reasonOf(err)}`);
     opening.delete(file);
-    await put(key, value, file);
+    try {
+      await put(key, value, file);
+    } catch (again) {
+      // 두 번 실패했으면 그대로 던집니다. 다만 그 전에 반드시 남깁니다 —
+      // 사용자 PC에서 이 자리를 다시 볼 방법은 이 한 줄뿐입니다.
+      logError(`저장 최종 실패 (${file}/${key})`, again);
+      throw again;
+    }
+    // 두 번째에 성공했다는 것은 첫 번째 핸들이 상해 있었다는 뜻입니다.
+    logWarn(`재시도로 저장에 성공했습니다: ${file}`);
   }
 }
 

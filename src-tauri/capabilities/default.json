@@ -18,6 +18,7 @@
     "global-shortcut:default",
     "updater:default",
     "store:default",
+    "log:default",
     "notification:default"
   ]
 }

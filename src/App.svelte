@@ -38,6 +38,7 @@
   import { DEFAULTS, loadSettings, saveSettings, type Settings } from './lib/settings';
   import { runNotifications } from './lib/notify';
   import { installUpdate, onUpdateAvailable } from './lib/system';
+  import { logError, reasonOf } from './lib/log';
   import { theme } from './lib/theme';
   import type { Repeat } from './lib/repeat';
   import type { NewTask, Task } from './lib/types';
@@ -67,7 +68,7 @@
    * 역할만 합니다. 그래서 팝업이 사라져도 Ctrl+Z는 계속 듣습니다 — 버튼에
    * 단축키를 같이 적어 그 사실을 알립니다.
    */
-  let toast = $state<{ title: string; kind: 'complete' | 'delete' | 'skip' } | null>(null);
+  let toast = $state<{ title: string; kind: ToastKind; why?: string } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   const UNDO_WINDOW = 7000;
@@ -88,17 +89,44 @@
     settleTimer = setTimeout(() => (settleDelay = 0), theme.motion.completeMs);
   }
 
-  const TOAST_LABEL = { complete: '완료', delete: '지움', skip: '건너뜀' } as const;
+  type ToastKind = 'complete' | 'delete' | 'skip' | 'fail';
+  const TOAST_LABEL = {
+    complete: '완료',
+    delete: '지움',
+    skip: '건너뜀',
+    fail: '저장 실패',
+  } as const;
 
-  function flash(title: string, kind: 'complete' | 'delete' | 'skip') {
-    toast = { title, kind };
+  function flash(title: string, kind: ToastKind, why?: string) {
+    toast = { title, kind, why };
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toast = null), UNDO_WINDOW);
   }
 
+  /**
+   * 쓰기 하나를 지켜봅니다.
+   *
+   * 저장은 전부 눌러 놓고 기다리지 않는 구조입니다 — 그래야 클릭이 즉시
+   * 반응합니다. 문제는 실패했을 때였습니다. `void addTask(...)`가 거절되면
+   * 아무도 받지 않아 조용히 사라지고, 입력칸은 이미 비워졌고, 카드는 안
+   * 생깁니다. 사용자 눈에는 "추가를 눌렀는데 아무 일도 안 일어남"입니다.
+   *
+   * persist.ts가 두 번 시도하고도 안 되면 그대로 던지기로 한 것은, 저장이
+   * 안 됐다는 사실이 묻히면 안 되기 때문입니다. 그 뜻이 화면까지 오려면
+   * 여기서 받아야 합니다.
+   */
+  function watch(work: Promise<unknown>, title: string): void {
+    void work.catch((err) => {
+      // 로그 파일에도 남깁니다. 화면의 팝업은 7초 뒤 사라지지만, 사용자
+      // PC에서 무슨 일이 있었는지 나중에 물어볼 수 있는 곳은 파일뿐입니다.
+      logError('저장 실패', err);
+      flash(title, 'fail', reasonOf(err));
+    });
+  }
+
   function onComplete(task: Task) {
     holdSettle();
-    void completeTask(task);
+    watch(completeTask(task), task.title);
     flash(task.title, 'complete');
   }
 
@@ -130,7 +158,7 @@
     // 지우는 항목을 고치던 중이었다면 그 상태도 함께 놓아 줍니다.
     if (editTarget?.id === task.id) editTarget = null;
     holdSettle();
-    void removeTask(task);
+    watch(removeTask(task), task.title);
     flash(task.title, 'delete');
   }
 
@@ -138,7 +166,7 @@
     id: string,
     patch: { title: string; due: number; categoryId: string; repeat?: Repeat }
   ) {
-    void updateTask(id, patch);
+    watch(updateTask(id, patch), patch.title);
     editTarget = null;
   }
 
@@ -151,7 +179,7 @@
    */
   function onEndRepeat(task: Task) {
     menu = null;
-    void endRepeat(task);
+    watch(endRepeat(task), task.title);
   }
 
   /**
@@ -163,7 +191,7 @@
   function onSkip(task: Task) {
     menu = null;
     holdSettle();
-    void skipOccurrence(task);
+    watch(skipOccurrence(task), task.title);
     flash(task.title, 'skip');
   }
 
@@ -827,7 +855,7 @@
       bind:categoryId
       bind:openSheet
       now={store.now}
-      onAdd={addTask}
+      onAdd={(t) => watch(addTask(t), t.title)}
       editing={editTarget}
       onEdit={commitEdit}
       onCancelEdit={() => (editTarget = null)}
@@ -891,9 +919,15 @@
     {/if}
 
     {#if toast}
-      <div class="undo">
+      <div class="undo" class:failed={toast.kind === 'fail'}>
         <span class="done-title">{TOAST_LABEL[toast.kind]} · {toast.title}</span>
-        <button onclick={() => void undoComplete()}>되돌리기 <kbd>{MOD_LABEL}Z</kbd></button>
+        {#if toast.kind === 'fail'}
+          <!-- 되돌릴 것이 없습니다. 아무 일도 안 일어났으니까요.
+               대신 이유를 적습니다 — 이 화면 한 장이 곧 신고 자료입니다. -->
+          <span class="why" title={toast.why}>{toast.why ?? '저장할 수 없었습니다'}</span>
+        {:else}
+          <button onclick={() => void undoComplete()}>되돌리기 <kbd>{MOD_LABEL}Z</kbd></button>
+        {/if}
       </div>
     {/if}
 
@@ -1019,6 +1053,27 @@
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  /* 실패는 다른 색으로 섭니다. 완료·삭제 팝업과 같은 모양이면 성공한 줄 압니다 */
+  .undo.failed {
+    background: rgba(190, 90, 70, 0.16);
+    border-color: rgba(255, 150, 120, 0.4);
+  }
+
+  .undo.failed .done-title {
+    color: rgba(255, 190, 170, 0.9);
+  }
+
+  .why {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+    font-size: 11px;
+    color: rgba(255, 190, 170, 0.62);
+    white-space: nowrap;
   }
 
   .done-title {
