@@ -1,4 +1,4 @@
-import { ARCHIVE_FILE, readJson, writeJson } from './persist';
+import { ARCHIVE_FILE, readJsonStrict, writeJson } from './persist';
 import type { ArchivedTask, Task } from './types';
 
 /**
@@ -15,8 +15,10 @@ const KEY = 'reminder-widget:archive:v1';
 
 let cache: ArchivedTask[] | null = null;
 
+// 읽기에 실패하면 던집니다. 여기서 '기록이 없다'로 넘어가면 다음 완료가
+// 지난 기록을 통째로 덮어씁니다.
 async function read(): Promise<ArchivedTask[]> {
-  cache ??= (await readJson<ArchivedTask[]>(KEY, ARCHIVE_FILE)) ?? [];
+  cache ??= (await readJsonStrict<ArchivedTask[]>(KEY, ARCHIVE_FILE)) ?? [];
   return cache;
 }
 
@@ -27,7 +29,12 @@ async function write(entries: ArchivedTask[]): Promise<void> {
 
 /** 완료 순. 마지막이 가장 최근입니다 */
 export async function listArchive(): Promise<ArchivedTask[]> {
-  return [...(await read())];
+  // 보여 주기만 하는 자리라 못 읽으면 빈 목록으로 둡니다. 쓰는 쪽은 던집니다.
+  try {
+    return [...(await read())];
+  } catch {
+    return [];
+  }
 }
 
 export async function archiveTask(entry: ArchivedTask): Promise<void> {

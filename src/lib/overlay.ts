@@ -1,4 +1,4 @@
-import { readJson, writeJson } from './persist';
+import { readJson, readJsonStrict, writeJson } from './persist';
 import type { Task } from './types';
 import { MS_HOUR } from './urgency';
 
@@ -72,8 +72,13 @@ function bare(key: string): string {
  */
 const KEEP_MS = 150 * 24 * MS_HOUR;
 
-export async function loadOverlay(now = Date.now()): Promise<Overlay> {
-  const saved = (await readJson<Overlay>(KEY)) ?? {};
+/**
+ * @param strict 고쳐 쓰기 전이면 true. 못 읽었을 때 '표시가 없다'로 읽고
+ *   덮어써 버리면, 그 전에 눌러 둔 완료가 전부 사라집니다.
+ */
+export async function loadOverlay(now = Date.now(), strict = false): Promise<Overlay> {
+  const read = strict ? readJsonStrict<Overlay> : readJson<Overlay>;
+  const saved = (await read(KEY)) ?? {};
   const kept: Overlay = {};
   for (const [mark, at] of Object.entries(saved)) {
     if (typeof at === 'number' && now - at < KEEP_MS) kept[bare(mark)] = at;
@@ -82,13 +87,13 @@ export async function loadOverlay(now = Date.now()): Promise<Overlay> {
 }
 
 export async function markDone(occurrence: string, at: number): Promise<void> {
-  const overlay = await loadOverlay(at);
+  const overlay = await loadOverlay(at, true);
   overlay[overlayKey(occurrence)] = at;
   await writeJson(KEY, overlay);
 }
 
 export async function clearDone(occurrence: string): Promise<void> {
-  const overlay = await loadOverlay();
+  const overlay = await loadOverlay(Date.now(), true);
   const key = overlayKey(occurrence);
   if (!(key in overlay)) return;
   delete overlay[key];

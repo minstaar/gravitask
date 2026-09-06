@@ -127,6 +127,30 @@ export async function readJson<T>(key: string, file = MAIN_FILE): Promise<T | nu
   }
 }
 
+/**
+ * 읽되, 못 읽으면 못 읽었다고 말합니다.
+ *
+ * `readJson`은 어떤 실패든 null로 바꿉니다. 화면에 뿌릴 값을 읽을 때는 그게
+ * 맞습니다 — 한 번 못 읽었다고 위젯이 통째로 죽을 이유는 없습니다.
+ *
+ * '읽어서 고쳐 쓰는' 자리에서는 정반대입니다. 못 읽은 것을 '없다'로 받으면
+ * 빈 값 위에 한 줄을 얹어 파일을 통째로 덮어씁니다. 캘린더 일정 하나를
+ * 체크하는 순간, 그 전에 체크해 둔 완료 표시가 전부 지워지고 다음에 앱을
+ * 켤 때 그 일정들이 되살아납니다. 할 일 목록과 완료 기록도 같은 모양입니다.
+ *
+ * 그래서 쓰기 직전의 읽기는 이 함수를 씁니다. 실패하면 던지고, 던지면
+ * 아무것도 안 씁니다. 값이 정말로 없을 때만 null입니다.
+ */
+export async function readJsonStrict<T>(key: string, file = MAIN_FILE): Promise<T | null> {
+  if (!inTauri) {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+    // 깨진 값도 던집니다. 덮어써서 남은 것까지 잃느니 멈추는 편이 낫습니다.
+    return JSON.parse(raw) as T;
+  }
+  return (await (await openStore(file)).get<T>(key)) ?? null;
+}
+
 export async function writeJson(key: string, value: unknown, file = MAIN_FILE): Promise<void> {
   if (!inTauri) {
     localStorage.setItem(key, JSON.stringify(value));
