@@ -99,8 +99,43 @@
   let overrideDate = $state('');
   let overrideTime = $state('');
 
-  const parsed = $derived(parseTaskInput(text, new Date(now)));
-  const ready = $derived(editing ? text.trim().length > 0 : parsed.title.length > 0);
+  /**
+   * 수정 모드로 실어 온 값들.
+   *
+   * 예전에는 이것들을 override 자리에 실었습니다. 파서가 '내일 회의 준비'의
+   * '내일'을 도로 집어가 제목을 잘라 버리는 것을 막으려는 것이었는데, 그
+   * 대가로 수정 중에는 자연어가 통째로 죽었습니다.
+   *
+   * 이제 파서에게 원래 제목을 아예 안 보여 주므로 그 걱정이 없습니다. 실어 온
+   * 값은 여기 따로 두고, 우선순위만 정합니다 — 사용자가 고른 값 > 덧붙여 적은
+   * 글자 > 실어 온 값 > 기본값.
+   */
+  let loadedTitle = $state('');
+  let loadedDue = $state<Date | null>(null);
+  let loadedRepeat = $state<Repeat | null | undefined>(undefined);
+
+  /**
+   * 수정 중에 원래 제목 뒤로 덧붙인 부분. 덧붙인 게 아니면 null입니다.
+   *
+   * 앞부분을 파서에게 안 보여 주는 것이 핵심입니다. 열었다가 아무것도 안 고치고
+   * 저장만 눌렀을 때 제목이 잘리거나 마감이 움직이면, 그건 수정이 아니라 사고입니다.
+   * 아무것도 안 한 수정은 아무것도 안 바꿔야 합니다.
+   *
+   * 제목을 통째로 다시 쓴 경우에는 앞이 안 맞으므로 전체를 읽습니다 — 그건
+   * 고치는 것이 아니라 새로 적는 것에 가깝습니다.
+   */
+  const appended = $derived(
+    editing && loadedTitle && text.startsWith(loadedTitle) ? text.slice(loadedTitle.length) : null
+  );
+
+  const parsed = $derived(parseTaskInput(appended ?? text, new Date(now)));
+
+  /** 저장할 제목. 덧붙인 경우에는 원래 제목을 그대로 두고 남은 글자만 붙입니다 */
+  const titleToSave = $derived(
+    appended === null ? parsed.title : `${loadedTitle} ${parsed.title}`.replace(/\s+/g, ' ').trim()
+  );
+
+  const ready = $derived(titleToSave.length > 0);
   /** 적기는 적었는데 규칙이 전부 가져가서 이름이 남지 않은 상태 */
   const needsTitle = $derived(!editing && text.trim().length > 0 && parsed.title.length === 0);
   const selected = $derived(categories.find((c) => c.id === categoryId) ?? categories[0]);
@@ -127,7 +162,9 @@
    * 어느 쪽이든 화면에 편집 가능한 필드로 드러납니다. 파싱이 빗나갔을 때
    * 손댈 방법이 없으면 입력 자체를 신뢰할 수 없게 됩니다.
    */
-  const base = $derived(parsed.due ?? new Date(new Date(now).setHours(23, 59, 0, 0)));
+  const base = $derived(
+    parsed.due ?? loadedDue ?? new Date(new Date(now).setHours(23, 59, 0, 0))
+  );
   const dateValue = $derived(overrideDate || toDate(base));
   const timeValue = $derived(overrideTime || toTime(base));
 
@@ -148,7 +185,9 @@
    */
   let overrideRepeat = $state<{ value: Repeat | null } | null>(null);
 
-  const repeat = $derived(overrideRepeat ? overrideRepeat.value : parsed.repeat);
+  const repeat = $derived(
+    overrideRepeat ? overrideRepeat.value : (parsed.repeat ?? loadedRepeat ?? null)
+  );
 
   /**
    * 날짜와 규칙 중 어느 쪽을 나중에 손댔는가.
@@ -392,6 +431,9 @@
     overrideRepeat = null;
     touched = null;
     guessedWeekday = false;
+    loadedTitle = '';
+    loadedDue = null;
+    loadedRepeat = undefined;
     countText = '';
     monthAnchor = null;
     closeAll();
@@ -409,22 +451,18 @@
     if (t) {
       if (t.id === loadedId) return;
       loadedId = t.id;
-      const d = new Date(t.due);
       text = t.title;
-      // 저장된 마감은 이미 사용자가 정한 값입니다. 그래서 파싱 결과가 아니라
-      // override 자리에 싣습니다 — 그러지 않으면 '내일 회의 준비' 같은 제목을
-      // 되돌려 넣는 순간 파서가 '내일'을 마감으로 도로 집어가고 제목에서
-      // 떼어냅니다. 멀쩡하던 제목이 조용히 잘려 나가는 것입니다.
-      overrideDate = toDate(d);
-      overrideTime = toTime(d);
-      // 마감과 같은 이유로 override 자리에 싣습니다. 파싱 결과를 쓰면 '매주
-      // 회의' 같은 제목을 되돌려 넣는 순간 파서가 '매주'를 규칙으로 도로
-      // 집어가고 제목에서 떼어냅니다.
-      overrideRepeat = { value: t.repeat ?? null };
+      // 파서에게는 이 제목을 안 보여 줍니다. 뒤에 덧붙인 글자만 읽습니다.
+      loadedTitle = t.title;
+      loadedDue = new Date(t.due);
+      loadedRepeat = t.repeat ?? null;
+      overrideDate = '';
+      overrideTime = '';
+      overrideRepeat = null;
       // 실어 오는 것은 이미 정해진 값이라 누가 이길 일이 없습니다. 손대는
       // 쪽이 생길 때부터 따집니다.
       touched = null;
-    guessedWeekday = false;
+      guessedWeekday = false;
       countText = '';
       categoryId = t.categoryId;
       closeAll();
@@ -439,16 +477,14 @@
     e.preventDefault();
     if (!ready) return;
     if (editing) {
-      // 수정 모드에서 제목은 적힌 글자 그대로입니다. 마감은 아래 칩이 이미
-      // 들고 있으므로 제목에서 다시 뽑을 이유가 없습니다.
       onEdit(editing.id, {
-        title: text.trim(),
+        title: titleToSave,
         due: firstDue.getTime(),
         categoryId: saveTo,
         repeat: repeatToSave,
       });
     } else {
-      onAdd({ title: parsed.title, due: firstDue.getTime(), categoryId: saveTo, repeat: repeatToSave });
+      onAdd({ title: titleToSave, due: firstDue.getTime(), categoryId: saveTo, repeat: repeatToSave });
     }
     reset();
     input?.focus();
