@@ -161,7 +161,7 @@ for (const [input, wantDue] of [
 // 말하는데 첫 카드가 주말인 것은 그 자리에서 틀린 값이라, 입력칸이 첫 회차를
 // 규칙 위로 옮깁니다.
 {
-  const r = parseTaskInput('평일 스탠드업 오전 10시', NOW);
+  const r = parseTaskInput('평일마다 스탠드업 오전 10시', NOW);
   const raw = r.due!.getTime();
   const aligned = alignToRepeat(raw, r.repeat!);
   const ok = fmt(new Date(raw)) === '2026-08-15 10:00' && fmt(new Date(aligned)) === '2026-08-17 10:00';
@@ -222,6 +222,47 @@ for (const [input, wantTitle] of [
   } else {
     fail++;
     console.log(`  FAIL 조사 정리: ${input} → "${r.title}" (want "${wantTitle}")`);
+  }
+}
+
+// '평일'·'주중'도 '마다'를 요구합니다. 맨몸을 인정하면 "주중 보고서 정리"
+// 같은 한 번짜리 문장이 반복이 됩니다.
+for (const [input, wantRepeat] of [
+  ['평일마다 오전 7시 조깅', true],
+  ['주중마다 정리', true],
+  ['평일 오전 7시 조깅', false],
+  ['주중 보고서 정리', false],
+  ['평일 회의록 정리', false],
+] as [string, boolean][]) {
+  const r = parseTaskInput(input, NOW);
+  if ((r.repeat !== null) === wantRepeat) {
+    pass++;
+    console.log(`  ok   ${input.padEnd(20)} → ${r.repeat ? describeCycle(r.repeat) : '반복 아님'}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${input}: 반복 ${r.repeat ? '있음' : '없음'} (want ${wantRepeat ? '있음' : '없음'})`);
+  }
+}
+
+// 요일만 적은 것은 '지금 이후의 가장 가까운 그 요일'입니다. NOW는 금요일 10시.
+for (const [input, wantDue] of [
+  // 금요일 9시는 이미 지났으므로 다음 주 금요일
+  ['금요일 오전 9시 세차', '2026-08-21 09:00'],
+  ['매주 금요일 오전 9시 세차', '2026-08-21 09:00'],
+  // 아직 안 지난 시각은 오늘 그대로
+  ['금요일 오후 6시 회식', '2026-08-14 18:00'],
+  ['금요일 정기 점검', '2026-08-14 23:59'],
+  // 날짜를 못 박은 것은 밀지 않습니다
+  ['오늘 오전 9시 약', '2026-08-14 09:00'],
+  ['이번주 금요일 오전 9시 보고', '2026-08-14 09:00'],
+] as [string, string][]) {
+  const r = parseTaskInput(input, NOW);
+  if (fmt(r.due) === wantDue) {
+    pass++;
+    console.log(`  ok   ${input.padEnd(22)} → ${fmt(r.due)}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${input}: ${fmt(r.due)} (want ${wantDue})`);
   }
 }
 

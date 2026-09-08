@@ -204,7 +204,21 @@ const NTH_WORDS: Record<string, number> = {
 
 /* ---------- 날짜 매칭 ---------- */
 
-type DateRule = { re: RegExp; make: (m: RegExpMatchArray, now: Date) => Date | null };
+type DateRule = {
+  re: RegExp;
+  make: (m: RegExpMatchArray, now: Date) => Date | null;
+  /**
+   * 요일만 적은 것인가.
+   *
+   * "화요일"은 특정 날짜가 아니라 '돌아오는 화요일'입니다. 그래서 그 시각이
+   * 이미 지났으면 이번 것이 아니라 다음 것을 뜻합니다 — 화요일 10시에 "화요일
+   * 9시"라고 적는 사람은 한 시간 전을 가리키는 게 아닙니다.
+   *
+   * "오늘"·"9월 20일"처럼 날짜를 못 박은 것은 밀지 않습니다. 지난 날짜를
+   * 적었다면 그럴 이유가 있는 것이고, 그때는 적은 대로가 맞습니다.
+   */
+  rolls?: true;
+};
 
 // 구체적인 패턴이 먼저 와야 합니다. "3일 뒤"가 "3일"보다 앞서야 하는 식.
 const DATE_RULES: DateRule[] = [
@@ -254,6 +268,7 @@ const DATE_RULES: DateRule[] = [
   {
     re: /([일월화수목금토])요일/,
     make: (m, n) => upcomingWeekday(n, WEEKDAYS.indexOf(m[1])),
+    rolls: true,
   },
   { re: /(?<![\d:/.\-])(\d{1,2})\s*일(?!\s*(?:뒤|후|있다가))/, make: (m, n) => resolveDayOfMonth(n, +m[1]) },
 ];
@@ -269,15 +284,15 @@ const DATE_RULES: DateRule[] = [
  * 같은 자리에서 시작하는 규칙끼리는 표 순서가 이깁니다. 그 순서는 구체적인
  * 것을 앞에 둔 것이라("3일 뒤"가 "3일"보다 앞) 여전히 필요합니다.
  */
-function matchDate(input: string, now: Date): Hit<Date> | null {
-  let best: Hit<Date> | null = null;
+function matchDate(input: string, now: Date): (Hit<Date> & { rolls?: true }) | null {
+  let best: (Hit<Date> & { rolls?: true }) | null = null;
   for (const rule of DATE_RULES) {
     const m = scan(input, rule.re);
     if (!m || m.index === undefined) continue;
     const value = rule.make(m, now);
     if (!value) continue; // 유효하지 않은 날짜면 이 규칙은 없던 걸로
     if (best && best.start <= m.index) continue;
-    best = { value, text: m[0], start: m.index, end: m.index + m[0].length };
+    best = { value, text: m[0], start: m.index, end: m.index + m[0].length, rolls: rule.rolls };
   }
   return best;
 }
@@ -375,8 +390,14 @@ const REPEAT_RULES: { re: RegExp; make: (m: RegExpMatchArray) => Omit<Repeat, 'l
   // '평일'은 매주 월~금과 같은 값이지만, 학기 중에 매일 하는 일은 대개 주말을
   // 빼기 때문에 이 다섯 요일을 고르는 일이 잦습니다. 자주 하는 일에는 이름이
   // 있어야 합니다.
+  //
+  // 다만 '마다'를 요구합니다. 맨몸을 인정하던 동안 "주중 보고서 정리" 같은
+  // 한 번짜리 문장이 반복이 됐습니다. 다른 규칙은 전부 '매'나 '마다'를
+  // 요구하는데 여기만 예외였고, 그 예외의 값이 오독이었습니다. 못 알아들으면
+  // 칩이 비어 있는 것이 눈에 보여 바로 고칠 수 있지만, 오독은 모르고
+  // 지나갑니다.
   {
-    re: /평일마다|평일|주중마다|주중/,
+    re: /(?:평일|주중)\s*마다/,
     make: () => ({ unit: 'week', every: 1, weekdays: [...WEEKDAYS_ONLY] }),
   },
   { re: /격주로?|2주\s*마다/, make: () => ({ unit: 'week', every: 2 }) },
@@ -503,6 +524,10 @@ export function parseTaskInput(input: string, now: Date = new Date()): ParsedInp
     due = new Date(dateHit.value);
     if (timeHit) due.setHours(timeHit.value.h, timeHit.value.m, 0, 0);
     else due.setHours(23, 59, 0, 0); // 날짜만 주면 그날 끝이 마감
+    // 요일만 적은 것은 '지금 이후의 가장 가까운 그 요일'입니다. 시각까지
+    // 지났으면 이번 것이 아니라 다음 것입니다. 시각만 적었을 때 내일로
+    // 미는 것과 같은 규칙이고, 그동안 이 자리만 빠져 있었습니다.
+    if (dateHit.rolls && due <= now) due = addDays(due, 7);
   } else if (timeHit) {
     due = startOfDay(now);
     due.setHours(timeHit.value.h, timeHit.value.m, 0, 0);
