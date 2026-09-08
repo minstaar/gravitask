@@ -87,8 +87,19 @@ function summarize(titles: string[]): string {
   return `${titles[0]} 외 ${titles.length - 1}건`;
 }
 
-/** 한 번에 하나만 돌게 합니다. 틱이 겹치면 같은 알림이 두 번 나갑니다 */
-let running = false;
+/**
+ * 한 번에 하나만 돌게 합니다. 틱이 겹치면 같은 알림이 두 번 나갑니다.
+ *
+ * 다만 빗장에 유효기간을 둡니다. try/finally가 있어도 안에서 '멎으면' —
+ * 답이 오지 않는 await 하나면 — finally에 영영 도달하지 못하고, 그 뒤 모든
+ * 틱이 첫 줄에서 되돌아갑니다. 시계는 멀쩡히 도는데 알림만 그 프로세스가
+ * 죽을 때까지 안 갑니다. 껐다 켜기 전에는 회복할 방법이 없습니다.
+ *
+ * 영영 조용한 것보다 한 번 겹치는 편이 낫습니다.
+ */
+let runningSince = 0;
+let runToken = 0;
+const STUCK_MS = 60_000;
 
 /**
  * 어느 주제의 일인지 앞에 붙입니다.
@@ -108,8 +119,10 @@ export async function runNotifications(
   settings: Settings,
   now: number
 ): Promise<void> {
-  if (running || !settings.notify) return;
-  running = true;
+  if (!settings.notify) return;
+  if (runningSince && Date.now() - runningSince < STUCK_MS) return;
+  const token = ++runToken;
+  runningSince = Date.now();
 
   try {
     const sent = await loadSent(now);
@@ -179,7 +192,8 @@ export async function runNotifications(
 
     if (changed) await writeJson(KEY, sent);
   } finally {
-    running = false;
+    // 멎었던 실행이 뒤늦게 끝나며 지금 도는 것의 빗장을 풀지 않게 합니다.
+    if (token === runToken) runningSince = 0;
   }
 }
 
