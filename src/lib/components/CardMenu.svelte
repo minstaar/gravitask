@@ -64,10 +64,27 @@
     const onDown = (e: MouseEvent) => {
       if (menu && !menu.contains(e.target as Node)) onClose();
     };
+
+    /**
+     * 위젯 밖으로 손이 나가면 닫습니다.
+     *
+     * 이 창이 곧 위젯입니다. 창을 벗어났다는 것은 이 카드에 볼일이 끝났다는
+     * 뜻인데, 메뉴만 남아 있으면 위젯은 접히고 그 위에 메뉴 하나가 떠 있는
+     * 모양이 됩니다. 다시 없애려면 일부러 위젯 안을 한 번 눌러야 합니다.
+     *
+     * main이 아니라 문서에 겁니다. 메뉴는 잘리지 않으려고 main 밖에 그리는데,
+     * main의 mouseleave로 잡으면 카드에서 메뉴로 손을 옮기는 순간 닫힙니다.
+     */
+    const onLeave = () => onClose();
+
     // 눌리는 순간 닫습니다. 떼는 것을 기다리면 메뉴 밖을 눌러 놓고도 한 박자
     // 남아 있어서, 그 사이의 클릭이 어디로 갈지 모호해집니다.
     document.addEventListener('mousedown', onDown, true);
-    return () => document.removeEventListener('mousedown', onDown, true);
+    document.documentElement.addEventListener('mouseleave', onLeave);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.documentElement.removeEventListener('mouseleave', onLeave);
+    };
   });
 </script>
 
