@@ -1,6 +1,6 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { forgetTask } from './notify';
-import { logWarn } from './log';
+import { logError, logWarn, reasonOf } from './log';
 import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './overlay';
 import {
   CALENDAR_CACHE_FILE,
@@ -201,6 +201,28 @@ export function startCalendarPolling(): () => void {
   };
 }
 
+/**
+ * 마지막으로 실패한 저장.
+ *
+ * 주제·배율처럼 기다리지 않는 저장이 있습니다. 이름을 한 글자 칠 때마다
+ * 디스크를 기다리면 입력이 끊기니까요. 그런데 기다리지 않는 것과 실패를
+ * 받지 않는 것을 같이 해 버려서, 실패하면 화면은 이미 바뀐 채로 아무 말이
+ * 없었습니다 — 저장된 줄 알고 껐다 켜면 되돌아가 있습니다.
+ *
+ * 기다리지는 않되 실패는 여기 남깁니다. 화면이 이걸 보고 알립니다.
+ */
+export const saveFailure = $state({
+  last: null as { what: string; reason: string; at: number } | null,
+});
+
+/** 기다리지 않는 저장. 실패하면 로그와 화면에 남깁니다 */
+function keep(work: Promise<unknown>, what: string): void {
+  void work.catch((err) => {
+    logError(`${what} 저장 실패`, err);
+    saveFailure.last = { what, reason: reasonOf(err), at: Date.now() };
+  });
+}
+
 export const store = $state({
   tasks: [] as Task[],
   categories: SEED,
@@ -346,7 +368,7 @@ export const view = $state({ zoom: 1, perPage: theme.layout.topicsPerPage });
 export function setPerPage(n: number): void {
   const clamped = Math.max(1, Math.min(maxTopicsPerPage(), Math.round(n)));
   view.perPage = clamped;
-  void writeJson(PER_PAGE_KEY, clamped);
+  keep(writeJson(PER_PAGE_KEY, clamped), '한 화면 주제 수');
 }
 
 export function setZoom(next: number): void {
@@ -354,7 +376,7 @@ export function setZoom(next: number): void {
   view.zoom = z;
   // 화면은 즉시 바뀌고 저장은 뒤따릅니다. 휠을 굴릴 때마다 디스크를
   // 기다리게 하면 배율이 끊겨 따라옵니다.
-  void writeJson(ZOOM_KEY, z);
+  keep(writeJson(ZOOM_KEY, z), '배율');
 }
 
 /** delta는 -1(축소) 또는 +1(확대) */
@@ -715,7 +737,7 @@ export function saveCategories(next: Category[]): void {
   store.categories = next;
   // 화면은 즉시 바뀌고 저장은 뒤따릅니다. 이름을 한 글자 칠 때마다
   // 디스크 쓰기를 기다리게 하면 입력이 끊깁니다.
-  void writeJson(CAT_KEY, next);
+  keep(writeJson(CAT_KEY, next), '주제');
 }
 
 const NEW_TOPIC = '새 주제';

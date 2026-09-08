@@ -1,4 +1,5 @@
 ﻿<script lang="ts">
+  import { untrack } from 'svelte';
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import Column from './lib/components/Column.svelte';
   import QuickAdd from './lib/components/QuickAdd.svelte';
@@ -7,6 +8,7 @@
     addCalendar,
     addCategory,
     addTask,
+    saveFailure,
     calendars,
     endRepeat,
     skipOccurrence,
@@ -133,6 +135,18 @@
    * 안 됐다는 사실이 묻히면 안 되기 때문입니다. 그 뜻이 화면까지 오려면
    * 여기서 받아야 합니다.
    */
+  /**
+   * 기다리지 않는 저장(주제·배율)의 실패를 화면으로 올립니다.
+   *
+   * 그쪽은 화면이 먼저 바뀌고 저장이 뒤따르는 구조라, 실패해도 눈에는
+   * 성공한 것처럼 보입니다. 껐다 켜야 되돌아간 것을 알게 되는데, 그때는
+   * 무엇 때문이었는지 짚을 수가 없습니다.
+   */
+  $effect(() => {
+    const failed = saveFailure.last;
+    if (failed) untrack(() => flash(failed.what, 'fail', failed.reason));
+  });
+
   function watch(work: Promise<unknown>, title: string): void {
     void work.catch((err) => {
       // 로그 파일에도 남깁니다. 화면의 팝업은 7초 뒤 사라지지만, 사용자
