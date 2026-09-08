@@ -199,27 +199,48 @@ export async function removeJson(key: string, file = MAIN_FILE): Promise<void> {
   }
 }
 
+/** 옮기기를 끝냈다는 표시 */
+const MIGRATED_KEY = 'reminder-widget:migrated:v1';
+
 /**
  * 이전 버전이 localStorage에 남긴 데이터를 파일로 옮깁니다.
  *
  * 업데이트로 저장 위치가 바뀌는 것은 사용자 사정이 아닙니다. 쓰던 할 일이
  * 사라지면 그건 우리 잘못이지 그들의 잘못이 아닙니다.
+ *
+ * 한 번 끝냈으면 다시 하지 않습니다. 예전에는 켤 때마다 돌면서 '파일 쪽에
+ * 값이 있나'로만 가렸는데, 그 확인이 `readJson`이라 **읽기에 실패해도 '없다'로
+ * 넘어갑니다.** 그러면 몇 달 전 localStorage에 굳어 있던 주제와 할 일이 지금
+ * 파일 위에 덮어써집니다 — 지운 주제가 되살아나고 지운 할 일이 돌아옵니다.
+ * WebView의 localStorage는 아무도 지우지 않으므로 이 화약은 계속 남아 있습니다.
+ *
+ * 표시를 남겨 두 번 다시 안 돌게 하고, 확인도 엄격한 읽기로 합니다. 못 읽으면
+ * 옮기지 않고 그냥 물러납니다 — 옮길 것이 없는 것과 못 읽은 것은 다릅니다.
  */
 export async function migrateFromLocalStorage(keys: string[]): Promise<void> {
   if (!inTauri || typeof localStorage === 'undefined') return;
 
-  for (const key of keys) {
-    const raw = localStorage.getItem(key);
-    if (!raw) continue;
+  try {
+    if ((await readJsonStrict<boolean>(MIGRATED_KEY)) === true) return;
 
-    // 파일 쪽에 이미 값이 있으면 건드리지 않습니다. 옮긴 뒤에 쌓인 변경을
-    // 옛 데이터로 덮어쓰는 것이 가장 나쁜 결과입니다.
-    if ((await readJson(key)) !== null) continue;
+    for (const key of keys) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
 
-    try {
-      await writeJson(key, JSON.parse(raw));
-    } catch {
-      /* 깨진 값은 옮기지 않습니다 */
+      // 파일 쪽에 이미 값이 있으면 건드리지 않습니다. 옮긴 뒤에 쌓인 변경을
+      // 옛 데이터로 덮어쓰는 것이 가장 나쁜 결과입니다.
+      if ((await readJsonStrict(key)) !== null) continue;
+
+      try {
+        await writeJson(key, JSON.parse(raw));
+      } catch {
+        /* 깨진 값은 옮기지 않습니다 */
+      }
     }
+
+    await writeJson(MIGRATED_KEY, true);
+  } catch (err) {
+    // 못 읽었으면 아무것도 안 옮깁니다. 다음에 다시 봅니다.
+    logWarn(`옛 저장소 옮기기를 건너뜁니다: ${reasonOf(err)}`);
   }
 }
