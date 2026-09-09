@@ -1,6 +1,6 @@
 ﻿import { archiveTask, dropArchived, findArchived, pruneArchive, toTask } from './archive';
 import { forgetTask } from './notify';
-import { logError, logWarn, reasonOf } from './log';
+import { logError, logInfo, logWarn, reasonOf } from './log';
 import { clearDone, loadOverlay, markDone, occurrenceOf, overlayKey } from './overlay';
 import {
   CALENDAR_CACHE_FILE,
@@ -304,6 +304,14 @@ export const undo = $state({ stack: [] as UndoEntry[] });
 export async function init(): Promise<void> {
   await migrateFromLocalStorage([TASK_KEY, CAT_KEY, SEED_KEY, ZOOM_KEY, PER_PAGE_KEY]);
   await refresh();
+
+  // 이 세션이 무엇을 읽고 시작했는지 남깁니다. 화면과 파일이 갈라졌을 때
+  // 이 한 줄이 있고 없고가 하루 차이였습니다.
+  logInfo(
+    `시작: 주제 ${store.categories.map((c) => c.name).join('/')} | 할 일 ${
+      store.tasks.filter((t) => t.sourceId === undefined).length
+    }건 | 구독 ${calendars.list.length}개`
+  );
   await drainCompleted();
   await pruneArchive(new Set(store.tasks.map((t) => t.id)));
 

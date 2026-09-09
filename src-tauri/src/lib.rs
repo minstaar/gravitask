@@ -495,11 +495,10 @@ pub fn run() {
             // 사용자 PC에서 무슨 일이 있었는지 알아낼 방법이 없다는 것이
             // 분명해졌습니다. 배포판은 경고 이상만 남겨 파일이 불어나지
             // 않게 합니다.
-            let level = if cfg!(debug_assertions) {
-                log::LevelFilter::Info
-            } else {
-                log::LevelFilter::Warn
-            };
+            // 배포판도 Info까지 남깁니다. Warn만 남기던 동안, 화면과 파일이
+            // 갈라진 세션이 로그에 아무 흔적도 남기지 않아 원인을 찾는 데
+            // 하루가 걸렸습니다. 한 달치가 4KB라 비용도 거의 없습니다.
+            let level = log::LevelFilter::Info;
             app.handle()
                 .plugin(tauri_plugin_log::Builder::default().level(level).build())?;
 

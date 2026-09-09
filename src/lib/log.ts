@@ -18,14 +18,15 @@ const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
  * 이 함수를 부르는 자리는 이미 뭔가 잘못된 자리입니다. 거기서 로그가 또
  * 던지면 원래 오류를 덮어씁니다 — 진단하려고 넣은 것이 진단을 지웁니다.
  */
-function send(level: 'warn' | 'error', message: string): void {
+function send(level: 'info' | 'warn' | 'error', message: string): void {
   if (!inTauri) {
     if (level === 'error') console.error(message);
-    else console.warn(message);
+    else if (level === 'warn') console.warn(message);
+    else console.info(message);
     return;
   }
   void import('@tauri-apps/plugin-log')
-    .then((m) => (level === 'error' ? m.error(message) : m.warn(message)))
+    .then((m) => (level === 'error' ? m.error(message) : level === 'warn' ? m.warn(message) : m.info(message)))
     .catch(() => {
       /* 로그를 못 남기는 것까지 보고할 데는 없습니다 */
     });
@@ -40,6 +41,16 @@ export function reasonOf(err: unknown): string {
   } catch {
     return String(err);
   }
+}
+
+/**
+ * 사고가 아니라 기록입니다.
+ *
+ * 이번에 하루를 쓴 이유가 "그 세션이 무엇을 읽었는가"를 아무 데서도 알 수
+ * 없어서였습니다. 시작할 때 한 줄만 있었으면 로그만 보고 끝났을 일입니다.
+ */
+export function logInfo(message: string): void {
+  send('info', message);
 }
 
 export function logWarn(message: string): void {
