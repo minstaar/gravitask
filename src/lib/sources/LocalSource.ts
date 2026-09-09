@@ -1,5 +1,5 @@
 import { logWarn } from '../log';
-import { readJsonStrict, writeJson } from '../persist';
+import { readJsonStrict, reloadJson, writeJson } from '../persist';
 import type { NewTask, Task, TaskSource } from '../types';
 
 /**
@@ -44,6 +44,23 @@ export class LocalSource implements TaskSource {
   }
 
   /**
+   * 고쳐 쓰기 전에는 파일을 다시 데려옵니다.
+   *
+   * 캐시는 시작할 때 한 번 읽고 그 뒤로는 자기가 옳다고 믿습니다. 그래서
+   * 파일이 어떻게 되든 화면은 모릅니다 — 화면에 열다섯 장, 파일에 한 장인
+   * 채로 몇 시간을 돌 수 있고, 실제로 그런 일이 있었습니다.
+   *
+   * 매번 다시 읽으면 갈라지는 순간 드러납니다. 화면이 그 자리에서 파일 쪽으로
+   * 돌아가므로 사용자가 바로 알아챕니다. 파일이 작아서 비용도 거의 없고,
+   * 잃고 나서 아는 것보다 낫습니다.
+   */
+  async #fresh(): Promise<Task[]> {
+    this.#cache = (await reloadJson<Task[]>(KEY)) ?? [];
+    this.#loaded = true;
+    return this.#cache;
+  }
+
+  /**
    * 디스크에 먼저 쓰고, 성공한 뒤에 메모리에 반영합니다.
    *
    * 순서가 반대였습니다. 그러면 저장이 실패해도 화면에는 멀쩡히 카드가 뜹니다
@@ -78,24 +95,24 @@ export class LocalSource implements TaskSource {
 
   async add(input: NewTask): Promise<Task> {
     const task: Task = { ...input, id: uid(), createdAt: Date.now(), completedAt: null };
-    await this.#write([...(await this.#read()), task]);
+    await this.#write([...(await this.#fresh()), task]);
     return task;
   }
 
   async update(id: string, patch: Partial<Omit<Task, 'id'>>): Promise<void> {
-    const tasks = await this.#read();
+    const tasks = await this.#fresh();
     await this.#write(tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
   async remove(id: string): Promise<void> {
-    const tasks = await this.#read();
+    const tasks = await this.#fresh();
     if (!tasks.some((t) => t.id === id)) return;
     await this.#write(tasks.filter((t) => t.id !== id));
   }
 
   /** 되돌리기용. 원래 id를 그대로 지킨 채 도로 넣습니다 */
   async insert(task: Task): Promise<void> {
-    const tasks = await this.#read();
+    const tasks = await this.#fresh();
     if (tasks.some((t) => t.id === task.id)) return;
     await this.#write([...tasks, task]);
   }

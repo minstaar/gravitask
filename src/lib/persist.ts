@@ -43,6 +43,8 @@ const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 type TauriStore = {
   get<T>(key: string): Promise<T | null | undefined>;
+  /** 디스크에서 다시 읽어 들입니다. 플러그인 판에 따라 없을 수 있습니다 */
+  reload?(): Promise<void>;
   set(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<boolean>;
   save(): Promise<void>;
@@ -149,6 +151,29 @@ export async function readJsonStrict<T>(key: string, file = MAIN_FILE): Promise<
     return JSON.parse(raw) as T;
   }
   return (await (await openStore(file)).get<T>(key)) ?? null;
+}
+
+/**
+ * 디스크에서 다시 읽어 들인 뒤 값을 돌려줍니다.
+ *
+ * `readJson`이 보는 것은 파일이 아니라 저장 플러그인이 들고 있는 사본입니다.
+ * 평소에는 같지만, 그 사본과 파일이 갈라지면 읽기로는 영영 알 수 없습니다 —
+ * 화면은 사본을 보고 사본은 자기가 옳다고 말하니까요. 실제로 그런 일이
+ * 있었습니다: 화면에 할 일 열다섯 장, 파일에는 한 장, 오류는 하나도 없이
+ * 몇 시간.
+ *
+ * 그래서 고쳐 쓰기 직전에는 이 함수로 파일을 다시 데려옵니다. 갈라져 있었다면
+ * 그 자리에서 드러나고, 사용자는 몇 시간 뒤가 아니라 지금 알게 됩니다.
+ */
+export async function reloadJson<T>(key: string, file = MAIN_FILE): Promise<T | null> {
+  if (!inTauri) return readJsonStrict<T>(key, file);
+
+  const store = await withDeadline(openStore(file), `${file} 열기`);
+  // 플러그인 판에 reload가 없으면 사본이라도 읽습니다. 없는 것보다 낫습니다.
+  if (typeof store.reload === 'function') {
+    await withDeadline(store.reload(), `${file} 다시 읽기`);
+  }
+  return (await withDeadline(store.get<T>(key), `${file} 읽기`)) ?? null;
 }
 
 export async function writeJson(key: string, value: unknown, file = MAIN_FILE): Promise<void> {
